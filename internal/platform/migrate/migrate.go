@@ -21,9 +21,7 @@ const (
 // Apply runs any pending SQL migrations bundled with the binary.
 func Apply(ctx context.Context, db *sqlx.DB, logger *slog.Logger) error {
 	goose.SetBaseFS(migrations.Files)
-	if logger != nil {
-		goose.SetLogger(gooseSlogLogger{logger: logger.With("component", "goose")})
-	}
+	goose.SetLogger(newGooseLogger(logger))
 	if err := goose.SetDialect("postgres"); err != nil {
 		return fmt.Errorf("migrate: set goose dialect: %w", err)
 	}
