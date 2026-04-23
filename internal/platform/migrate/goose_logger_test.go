@@ -38,6 +38,34 @@ func TestNewGooseLoggerFormatsMigrationSummary(t *testing.T) {
 	}
 }
 
+func TestNewGooseLoggerFormatsUpToDateSummaryWithNewline(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	adapter, ok := newGooseLogger(logger).(gooseSlogLogger)
+	if !ok {
+		t.Fatal("expected goose slog logger adapter")
+	}
+
+	adapter.Printf("goose: no migrations to run.\ncurrent version: %d", 7)
+
+	record := decodeLogRecord(t, &buf)
+	if got := record["msg"]; got != "goose migrations up to date" {
+		t.Fatalf("unexpected log message: got %v", got)
+	}
+	if got := record["event"]; got != "migration_summary" {
+		t.Fatalf("unexpected event: got %v", got)
+	}
+	if got := record["status"]; got != "up_to_date" {
+		t.Fatalf("unexpected status: got %v", got)
+	}
+	if got := record["version"]; got != float64(7) {
+		t.Fatalf("unexpected version: got %v", got)
+	}
+}
+
 func TestNewGooseLoggerFormatsMigrationStep(t *testing.T) {
 	t.Parallel()
 
@@ -50,6 +78,37 @@ func TestNewGooseLoggerFormatsMigrationStep(t *testing.T) {
 	}
 
 	adapter.Printf("OK   %s (%s)", "0002_add_shelves.sql", "12.4ms")
+
+	record := decodeLogRecord(t, &buf)
+	if got := record["msg"]; got != "goose migration step" {
+		t.Fatalf("unexpected log message: got %v", got)
+	}
+	if got := record["event"]; got != "migration_step" {
+		t.Fatalf("unexpected event: got %v", got)
+	}
+	if got := record["result"]; got != "ok" {
+		t.Fatalf("unexpected result: got %v", got)
+	}
+	if got := record["file"]; got != "0002_add_shelves.sql" {
+		t.Fatalf("unexpected file: got %v", got)
+	}
+	if got := record["duration"]; got != "12.4ms" {
+		t.Fatalf("unexpected duration: got %v", got)
+	}
+}
+
+func TestNewGooseLoggerFormatsMigrationStepWithSingleSpaceAndNewline(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	adapter, ok := newGooseLogger(logger).(gooseSlogLogger)
+	if !ok {
+		t.Fatal("expected goose slog logger adapter")
+	}
+
+	adapter.Printf("OK %s (%s)\n", "0002_add_shelves.sql", "12.4ms")
 
 	record := decodeLogRecord(t, &buf)
 	if got := record["msg"]; got != "goose migration step" {
