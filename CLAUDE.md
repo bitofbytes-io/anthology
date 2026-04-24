@@ -26,7 +26,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-Two-tier catalogue: Go 1.24 API + Angular 21 Material UI, deployed as independent containers.
+Two-tier catalogue: Go 1.25 API + Angular 21 Material UI, deployed as independent containers.
 
 ### Go Backend (`cmd/api`, `internal/`)
 - **chi router** with middleware for request IDs, timeouts, structured logging (slog)

@@ -5,7 +5,7 @@ Anthology is a split-stack application with a stateless Go API and an Angular Ma
 | Layer | Technology | Responsibilities |
 | ----- | ---------- | ---------------- |
 | Frontend | Angular 21 + Angular Material | Authentication UI, catalogue browse experience, Add Item workflows (search, manual entry, CSV import). |
-| Backend | Go 1.24 (`cmd/api`) | REST API for CRUD, CSV ingestion endpoint, metadata lookup proxy, session management. |
+| Backend | Go 1.25 (`cmd/api`) | REST API for CRUD, CSV ingestion endpoint, metadata lookup proxy, session management. |
 | Data | Postgres (`internal/items`) | Persists catalog items. |
 | External APIs | Google Books API | Provides metadata for ISBN/keyword searches and CSV enrichment. |
 

@@ -4,7 +4,7 @@ This document reflects the current API implementation under `cmd/api` and `inter
 
 ## High-level shape
 
-* Go 1.24, chi router, `slog` logging.
+* Go 1.25, chi router, `slog` logging.
 * Runtime config from env/_FILE (see **Configuration**).
 * Requires Postgres (sqlx, embedded Goose migrations).
 * Metadata lookups proxy Google Books; CSV import reuses that pipeline.

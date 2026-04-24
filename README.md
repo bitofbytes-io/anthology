@@ -20,7 +20,7 @@ If you are new to the project, start with [`docs/architecture/overview.md`](docs
 
 ## Backend (Go)
 
-* Go 1.24 with structured logging via `log/slog`.
+* Go 1.25 with structured logging via `log/slog`.
 * HTTP routing handled by `chi`, with middleware for request IDs, timeouts, and structured logging.
 * Postgres repositories in `internal/items` and `internal/shelves` handle persistence, shelf layouts, and item placement.
 * Metadata lookups (`internal/catalog`) call the Google Books API. `/api/catalog/lookup` proxies those queries so the Angular UI can search by ISBN or keyword without exposing API tokens.

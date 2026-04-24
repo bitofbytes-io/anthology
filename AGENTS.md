@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Stack overview
-Anthology is a two-tier catalogue: a Go 1.24 API (under `cmd/api` + `internal/`) fronted by an Angular 21 Material UI (`web/`). Recent work adds metadata search (Google Books), CSV imports, and cover thumbnails that all flow through the Add Item page so validation and enrichment behave consistently. A new shelves module models real-world shelves with photo-backed layouts so items can be placed into slots and surfaced in the UI.
+Anthology is a two-tier catalogue: a Go 1.25 API (under `cmd/api` + `internal/`) fronted by an Angular 21 Material UI (`web/`). Recent work adds metadata search (Google Books), CSV imports, and cover thumbnails that all flow through the Add Item page so validation and enrichment behave consistently. A new shelves module models real-world shelves with photo-backed layouts so items can be placed into slots and surfaced in the UI.
 
 ## Project Structure & Module Organization
 - `cmd/api`: Go entrypoint; wire up config, repositories, chi router, middleware, and HTTP handlers.

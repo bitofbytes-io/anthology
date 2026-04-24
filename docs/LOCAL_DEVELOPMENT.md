@@ -5,7 +5,7 @@ This guide walks through setting up Anthology for local development with full OA
 ## Prerequisites
 
 - PostgreSQL database running locally
-- Go 1.24+
+- Go 1.25+
 - Node.js 20+ (for Angular frontend)
 - Google Cloud account
 
