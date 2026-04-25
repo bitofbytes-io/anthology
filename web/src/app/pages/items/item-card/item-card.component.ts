@@ -28,7 +28,6 @@ export class ItemCardComponent {
     @Output() shelfLocationClicked = new EventEmitter<{ item: Item; event: MouseEvent }>();
     @Output() seriesClicked = new EventEmitter<{ item: Item; event: MouseEvent }>();
 
-
     onCardClick(): void {
         this.cardClicked.emit(this.item);
     }
