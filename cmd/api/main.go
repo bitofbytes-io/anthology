@@ -20,6 +20,11 @@ import (
 	"anthology/internal/shelves"
 )
 
+var (
+	version  = "dev"
+	revision = "unknown"
+)
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -48,7 +53,7 @@ func main() {
 		logger.Error("failed to apply migrations", "error", err)
 		os.Exit(1)
 	}
-	logger.Info("connected to postgres")
+	logger.Info("connected to postgres", "version", version, "revision", revision)
 
 	// Initialize repositories
 	itemRepo := items.NewPostgresRepository(db)
@@ -89,7 +94,7 @@ func main() {
 	}
 
 	go func() {
-		logger.Info("Anthology API listening", "addr", srv.Addr)
+		logger.Info("Anthology API listening", "addr", srv.Addr, "version", version, "revision", revision)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("http server error", "error", err)
 		}

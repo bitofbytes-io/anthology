@@ -50,6 +50,9 @@ jobs:
           API_IMAGE_REPO: ${{ env.API_IMAGE_REPO }}
           UI_IMAGE_REPO: ${{ env.UI_IMAGE_REPO }}
           PLATFORMS: ${{ env.PLATFORMS }}
+          VERSION: ${{ steps.meta.outputs.TAG }}
+          REVISION: ${{ github.sha }}
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
           set -euo pipefail
           : "${REGISTRY:?Missing vars.IMAGE_REG repository variable}"
