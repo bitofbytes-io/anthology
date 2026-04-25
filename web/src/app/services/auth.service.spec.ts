@@ -24,6 +24,16 @@ describe(AuthService.name, () => {
         httpMock.verify();
     });
 
+    function setSessionState(value: { authenticated: boolean }) {
+        (
+            service as unknown as {
+                sessionState: {
+                    next: (value: { authenticated: boolean }) => void;
+                };
+            }
+        ).sessionState.next(value);
+    }
+
     it('redirects to Google OAuth without redirectTo when none is provided', () => {
         service.loginWithGoogle();
 
@@ -45,13 +55,7 @@ describe(AuthService.name, () => {
     });
 
     it('returns cached session state without making a request', () => {
-        (
-            service as unknown as {
-                sessionState: {
-                    next: (value: any) => void;
-                };
-            }
-        ).sessionState.next({
+        setSessionState({
             authenticated: true,
         });
 
@@ -96,13 +100,7 @@ describe(AuthService.name, () => {
     });
 
     it('clears session state on logout success', () => {
-        (
-            service as unknown as {
-                sessionState: {
-                    next: (value: any) => void;
-                };
-            }
-        ).sessionState.next({
+        setSessionState({
             authenticated: true,
         });
 

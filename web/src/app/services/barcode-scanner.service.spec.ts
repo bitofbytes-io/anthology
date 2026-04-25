@@ -56,6 +56,7 @@ describe('BarcodeScannerService', () => {
     });
 
     afterEach(() => {
+        vi.restoreAllMocks();
         (globalThis as any).BarcodeDetector = originalBarcodeDetector;
         if (!hadOwnMediaDevices) {
             delete (navigator as any).mediaDevices;

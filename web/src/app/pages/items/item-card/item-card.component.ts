@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from 
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 
-import { Item } from '../../../models';
+import { BookStatus, Item } from '../../../models';
 import { ThumbnailPipe } from '../../../pipes/thumbnail.pipe';
 import {
     chipClassFor,
@@ -61,7 +61,7 @@ export class ItemCardComponent {
     }
 
     isRead(item: Item): boolean {
-        return item.readingStatus === 'read';
+        return item.readingStatus === BookStatus.Read;
     }
 
     chipClassFor(item: Item): string {
