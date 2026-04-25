@@ -30,7 +30,11 @@ describe('BarcodeScannerService', () => {
                 return ['ean_13'];
             }
 
-            detect(): Promise<Array<{ rawValue?: string }>> {
+            detect(): Promise<
+                Array<{
+                    rawValue?: string;
+                }>
+            > {
                 return Promise.resolve([]);
             }
         };
@@ -71,16 +75,16 @@ describe('BarcodeScannerService', () => {
             value: null,
         });
 
-        spyOn(video, 'play').and.resolveTo();
+        vi.spyOn(video, 'play').mockResolvedValue();
         if (!video.pause) {
             (video as any).pause = () => undefined;
         }
-        spyOn(video, 'pause').and.callFake(() => undefined);
+        vi.spyOn(video, 'pause').mockImplementation(() => undefined);
 
         await service.startScanner(video, () => undefined);
 
-        expect(service.scannerActive()).toBeTrue();
-        expect(service.scannerSupported()).toBeTrue();
+        expect(service.scannerActive()).toBe(true);
+        expect(service.scannerSupported()).toBe(true);
         expect(service.scannerStatus()).toBeNull();
         expect(service.scannerHint()).toContain('Align an ISBN barcode');
     });
@@ -88,7 +92,7 @@ describe('BarcodeScannerService', () => {
     it('preserves start-up error when camera access fails', async () => {
         const service = TestBed.inject(BarcodeScannerService);
         const video = document.createElement('video');
-        const consoleSpy = spyOn(console, 'error');
+        const consoleSpy = vi.spyOn(console, 'error');
 
         Object.defineProperty(video, 'srcObject', {
             configurable: true,
@@ -107,11 +111,11 @@ describe('BarcodeScannerService', () => {
 
         await service.startScanner(video, () => undefined);
 
-        expect(service.scannerActive()).toBeFalse();
+        expect(service.scannerActive()).toBe(false);
         expect(service.scannerError()).toContain('Camera access failed');
         expect(consoleSpy).toHaveBeenCalledWith(
             'Unable to start barcode scanner',
-            jasmine.any(Error),
+            expect.any(Error),
         );
     });
 

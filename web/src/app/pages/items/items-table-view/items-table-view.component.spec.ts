@@ -74,36 +74,36 @@ describe('ItemsTableViewComponent', () => {
     });
 
     it('should emit itemSelected when row is clicked', () => {
-        const spy = spyOn(component.itemSelected, 'emit');
+        const spy = vi.spyOn(component.itemSelected, 'emit');
         component.onItemSelected(mockItems[0]);
         expect(spy).toHaveBeenCalledWith(mockItems[0]);
     });
 
     it('should emit typeFilterRequested when type chip is clicked', () => {
-        const spy = spyOn(component.typeFilterRequested, 'emit');
+        const spy = vi.spyOn(component.typeFilterRequested, 'emit');
         const event = new MouseEvent('click');
-        spyOn(event, 'stopPropagation');
+        vi.spyOn(event, 'stopPropagation');
         component.onTypeFilterRequested(ItemTypes.Book, event);
         expect(spy).toHaveBeenCalledWith(ItemTypes.Book);
         expect(event.stopPropagation).toHaveBeenCalled();
     });
 
     it('should emit shelfLocationRequested when shelf button clicked', () => {
-        const spy = spyOn(component.shelfLocationRequested, 'emit');
+        const spy = vi.spyOn(component.shelfLocationRequested, 'emit');
         const event = new MouseEvent('click');
         component.onShelfLocationRequested(mockItems[0], event);
         expect(spy).toHaveBeenCalledWith({ item: mockItems[0], event });
     });
 
     it('should emit itemSelected on Enter key', () => {
-        const spy = spyOn(component.itemSelected, 'emit');
+        const spy = vi.spyOn(component.itemSelected, 'emit');
         const event = new KeyboardEvent('keydown', { key: 'Enter' });
         component.handleRowKeydown(event, mockItems[0]);
         expect(spy).toHaveBeenCalledWith(mockItems[0]);
     });
 
     it('should emit itemSelected on Space key', () => {
-        const spy = spyOn(component.itemSelected, 'emit');
+        const spy = vi.spyOn(component.itemSelected, 'emit');
         const event = new KeyboardEvent('keydown', { key: ' ' });
         component.handleRowKeydown(event, mockItems[0]);
         expect(spy).toHaveBeenCalledWith(mockItems[0]);
@@ -124,10 +124,10 @@ describe('ItemsTableViewComponent', () => {
         groupedItemsSignal.set([{ letter: 'A', items: [itemWithSeries] }]);
         fixture.detectChanges();
 
-        const spy = spyOn(component.seriesRequested, 'emit');
+        const spy = vi.spyOn(component.seriesRequested, 'emit');
         const button = fixture.nativeElement.querySelector('.series-button') as HTMLButtonElement;
         const event = new MouseEvent('click');
-        spyOn(event, 'stopPropagation');
+        vi.spyOn(event, 'stopPropagation');
         button.dispatchEvent(event);
 
         expect(spy).toHaveBeenCalledWith({ item: itemWithSeries, event });

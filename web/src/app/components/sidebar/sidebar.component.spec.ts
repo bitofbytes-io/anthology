@@ -66,8 +66,8 @@ describe(SidebarComponent.name, () => {
     });
 
     it('emits navigation and action events', () => {
-        const navigateSpy = spyOn(fixture.componentInstance.navigate, 'emit');
-        const actionSpy = spyOn(fixture.componentInstance.actionTriggered, 'emit');
+        const navigateSpy = vi.spyOn(fixture.componentInstance.navigate, 'emit');
+        const actionSpy = vi.spyOn(fixture.componentInstance.actionTriggered, 'emit');
         const compiled = fixture.nativeElement as HTMLElement;
 
         const firstNav = compiled.querySelector('.nav a.nav-link') as HTMLAnchorElement;
@@ -89,6 +89,6 @@ describe(SidebarComponent.name, () => {
         fixture.componentRef.setInput('open', true);
         fixture.detectChanges();
         const sidebar = fixture.nativeElement.querySelector('.sidebar');
-        expect(sidebar?.classList.contains('sidebar--open')).toBeTrue();
+        expect(sidebar?.classList.contains('sidebar--open')).toBe(true);
     });
 });

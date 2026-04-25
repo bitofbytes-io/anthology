@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from 
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 
-import { BookStatus, Item } from '../../../models';
+import { Item } from '../../../models';
 import { ThumbnailPipe } from '../../../pipes/thumbnail.pipe';
 import {
     chipClassFor,
@@ -28,7 +28,6 @@ export class ItemCardComponent {
     @Output() shelfLocationClicked = new EventEmitter<{ item: Item; event: MouseEvent }>();
     @Output() seriesClicked = new EventEmitter<{ item: Item; event: MouseEvent }>();
 
-    readonly BookStatus = BookStatus;
 
     onCardClick(): void {
         this.cardClicked.emit(this.item);
@@ -60,6 +59,10 @@ export class ItemCardComponent {
 
     readingProgress(item: Item): ReadingProgress | null {
         return readingProgress(item);
+    }
+
+    isRead(item: Item): boolean {
+        return item.readingStatus === 'read';
     }
 
     chipClassFor(item: Item): string {

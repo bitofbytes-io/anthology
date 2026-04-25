@@ -43,7 +43,7 @@ describe('AlphaRailComponent', () => {
         component.histogram = signal(histogram);
         fixture.detectChanges();
 
-        const emitSpy = spyOn(component.letterSelected, 'emit');
+        const emitSpy = vi.spyOn(component.letterSelected, 'emit');
         component.selectLetter('A');
 
         expect(emitSpy).toHaveBeenCalledWith('A');
@@ -53,8 +53,8 @@ describe('AlphaRailComponent', () => {
         component.activeLetter = signal('B');
         fixture.detectChanges();
 
-        expect(component.isActive('B')).toBeTrue();
-        expect(component.isActive('A')).toBeFalse();
+        expect(component.isActive('B')).toBe(true);
+        expect(component.isActive('A')).toBe(false);
     });
 
     it('should return count for letter', () => {

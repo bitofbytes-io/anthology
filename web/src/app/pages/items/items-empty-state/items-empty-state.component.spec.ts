@@ -50,7 +50,7 @@ describe('ItemsEmptyStateComponent', () => {
     });
 
     it('should emit createRequested when create button clicked', () => {
-        const spy = spyOn(component.createRequested, 'emit');
+        const spy = vi.spyOn(component.createRequested, 'emit');
         const button = fixture.nativeElement.querySelector('button');
         button.click();
         expect(spy).toHaveBeenCalled();

@@ -70,7 +70,7 @@ describe('LookupResultsComponent', () => {
     });
 
     it('should emit quickAdd when add button is clicked', () => {
-        const spy = spyOn(component.quickAdd, 'emit');
+        const spy = vi.spyOn(component.quickAdd, 'emit');
         component.results = [mockResult];
         fixture.detectChanges();
 
@@ -81,7 +81,7 @@ describe('LookupResultsComponent', () => {
     });
 
     it('should not emit quickAdd when busy', () => {
-        const spy = spyOn(component.quickAdd, 'emit');
+        const spy = vi.spyOn(component.quickAdd, 'emit');
         component.results = [mockResult];
         component.busy = true;
         fixture.detectChanges();
@@ -92,7 +92,7 @@ describe('LookupResultsComponent', () => {
     });
 
     it('should emit useForManual when manual entry button is clicked', () => {
-        const spy = spyOn(component.useForManual, 'emit');
+        const spy = vi.spyOn(component.useForManual, 'emit');
         component.results = [mockResult];
         fixture.detectChanges();
 

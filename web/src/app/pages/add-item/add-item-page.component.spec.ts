@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { fakeAsync, flush, TestBed } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
     ActivatedRoute,
@@ -20,10 +20,14 @@ import { ItemLookupService } from '../../services/item-lookup.service';
 import { SeriesService } from '../../services/series.service';
 
 describe(AddItemPageComponent.name, () => {
-    let itemServiceSpy: jasmine.SpyObj<ItemService>;
-    let snackBarSpy: jasmine.SpyObj<MatSnackBar>;
-    let itemLookupServiceSpy: jasmine.SpyObj<ItemLookupService>;
-    let dialogSpy: jasmine.SpyObj<MatDialog>;
+    let itemServiceSpy: {
+        create: ReturnType<typeof vi.fn>;
+        importCsv: ReturnType<typeof vi.fn>;
+        checkDuplicates: ReturnType<typeof vi.fn>;
+    };
+    let snackBarSpy: { open: ReturnType<typeof vi.fn> };
+    let itemLookupServiceSpy: { lookup: ReturnType<typeof vi.fn> };
+    let dialogSpy: { open: ReturnType<typeof vi.fn> };
     let queryParamMapSubject: BehaviorSubject<ParamMap>;
 
     const mockSeriesService = {
@@ -40,17 +44,21 @@ describe(AddItemPageComponent.name, () => {
     }
 
     beforeEach(async () => {
-        itemServiceSpy = jasmine.createSpyObj<ItemService>('ItemService', [
-            'create',
-            'importCsv',
-            'checkDuplicates',
-        ]);
-        itemServiceSpy.checkDuplicates.and.returnValue(of([])); // Default: no duplicates
-        snackBarSpy = jasmine.createSpyObj<MatSnackBar>('MatSnackBar', ['open']);
-        itemLookupServiceSpy = jasmine.createSpyObj<ItemLookupService>('ItemLookupService', [
-            'lookup',
-        ]);
-        dialogSpy = jasmine.createSpyObj<MatDialog>('MatDialog', ['open']);
+        itemServiceSpy = {
+            create: vi.fn().mockName('ItemService.create'),
+            importCsv: vi.fn().mockName('ItemService.importCsv'),
+            checkDuplicates: vi.fn().mockName('ItemService.checkDuplicates'),
+        };
+        itemServiceSpy.checkDuplicates.mockReturnValue(of([])); // Default: no duplicates
+        snackBarSpy = {
+            open: vi.fn().mockName('MatSnackBar.open'),
+        };
+        itemLookupServiceSpy = {
+            lookup: vi.fn().mockName('ItemLookupService.lookup'),
+        };
+        dialogSpy = {
+            open: vi.fn().mockName('MatDialog.open'),
+        };
         queryParamMapSubject = new BehaviorSubject<ParamMap>(createParamMap({}));
 
         await TestBed.configureTestingModule({
@@ -80,7 +88,7 @@ describe(AddItemPageComponent.name, () => {
         return fixture;
     }
 
-    it('creates an item and routes back to the library on save', fakeAsync(() => {
+    it('creates an item and routes back to the library on save', async () => {
         const mockItem = {
             id: 'id-123',
             title: 'Test',
@@ -91,12 +99,12 @@ describe(AddItemPageComponent.name, () => {
             updatedAt: new Date().toISOString(),
         } satisfies Item;
 
-        itemServiceSpy.create.and.returnValue(of(mockItem));
-        snackBarSpy.open.calls.reset();
+        itemServiceSpy.create.mockReturnValue(of(mockItem));
+        snackBarSpy.open.mockClear();
         const router = TestBed.inject(Router);
-        const navigateSpy = spyOn(router, 'navigate').and.resolveTo(true);
+        const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
         const fixture = createComponent();
-        fixture.componentInstance.handleSave({
+        await fixture.componentInstance.handleSave({
             title: 'Test',
             creator: 'Me',
             itemType: 'book',
@@ -107,20 +115,20 @@ describe(AddItemPageComponent.name, () => {
             description: '',
             notes: '',
         });
-        flush();
+        await fixture.whenStable();
         expect(itemServiceSpy.create).toHaveBeenCalled();
         expect(snackBarSpy.open).toHaveBeenCalled();
         expect(navigateSpy).toHaveBeenCalledWith(['/']);
-    }));
+    });
 
-    it('shows a snack bar message on failure', fakeAsync(() => {
-        snackBarSpy.open.calls.reset();
-        const consoleErrorSpy = spyOn(console, 'error');
-        itemServiceSpy.create.and.returnValue(throwError(() => new Error('fail')));
+    it('shows a snack bar message on failure', async () => {
+        snackBarSpy.open.mockClear();
+        const consoleErrorSpy = vi.spyOn(console, 'error');
+        itemServiceSpy.create.mockReturnValue(throwError(() => new Error('fail')));
         const router = TestBed.inject(Router);
-        const navigateSpy = spyOn(router, 'navigate').and.resolveTo(true);
+        const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
         const fixture = createComponent();
-        fixture.componentInstance.handleSave({
+        await fixture.componentInstance.handleSave({
             title: 'Test',
             creator: 'Me',
             itemType: 'book',
@@ -131,14 +139,14 @@ describe(AddItemPageComponent.name, () => {
             description: '',
             notes: '',
         });
-        flush();
+        await fixture.whenStable();
 
         expect(snackBarSpy.open).toHaveBeenCalled();
         expect(navigateSpy).not.toHaveBeenCalled();
-        expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to save item', jasmine.any(Error));
-    }));
+        expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to save item', expect.any(Error));
+    });
 
-    it('prompts for duplicates and only creates when confirmed', fakeAsync(() => {
+    it('prompts for duplicates and only creates when confirmed', async () => {
         const mockDuplicate = {
             id: 'dup-1',
             title: 'Test',
@@ -146,12 +154,12 @@ describe(AddItemPageComponent.name, () => {
             identifierType: '',
             updatedAt: new Date().toISOString(),
         };
-        itemServiceSpy.checkDuplicates.and.returnValue(of([mockDuplicate]));
+        itemServiceSpy.checkDuplicates.mockReturnValue(of([mockDuplicate]));
 
         const dialogRefSpy = {
             afterClosed: () => of<'add' | 'cancel'>('add'),
-        } as unknown as jasmine.SpyObj<unknown>;
-        dialogSpy.open.and.returnValue(dialogRefSpy as any);
+        };
+        dialogSpy.open.mockReturnValue(dialogRefSpy as any);
 
         const mockItem = {
             id: 'id-123',
@@ -162,13 +170,13 @@ describe(AddItemPageComponent.name, () => {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         } satisfies Item;
-        itemServiceSpy.create.and.returnValue(of(mockItem));
+        itemServiceSpy.create.mockReturnValue(of(mockItem));
 
         const fixture = createComponent();
         const router = TestBed.inject(Router);
-        const navigateSpy = spyOn(router, 'navigate').and.resolveTo(true);
+        const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
 
-        fixture.componentInstance.handleSave({
+        await fixture.componentInstance.handleSave({
             title: 'Test',
             creator: 'Me',
             itemType: 'book',
@@ -179,14 +187,14 @@ describe(AddItemPageComponent.name, () => {
             description: '',
             notes: '',
         });
-        flush();
+        await fixture.whenStable();
 
         expect(dialogSpy.open).toHaveBeenCalled();
         expect(itemServiceSpy.create).toHaveBeenCalled();
         expect(navigateSpy).toHaveBeenCalledWith(['/']);
-    }));
+    });
 
-    it('does not create when duplicate dialog is cancelled', fakeAsync(() => {
+    it('does not create when duplicate dialog is cancelled', async () => {
         const mockDuplicate = {
             id: 'dup-1',
             title: 'Test',
@@ -194,18 +202,18 @@ describe(AddItemPageComponent.name, () => {
             identifierType: '',
             updatedAt: new Date().toISOString(),
         };
-        itemServiceSpy.checkDuplicates.and.returnValue(of([mockDuplicate]));
+        itemServiceSpy.checkDuplicates.mockReturnValue(of([mockDuplicate]));
 
         const dialogRefSpy = {
             afterClosed: () => of<'add' | 'cancel'>('cancel'),
-        } as unknown as jasmine.SpyObj<unknown>;
-        dialogSpy.open.and.returnValue(dialogRefSpy as any);
+        };
+        dialogSpy.open.mockReturnValue(dialogRefSpy as any);
 
         const fixture = createComponent();
         const router = TestBed.inject(Router);
-        const navigateSpy = spyOn(router, 'navigate').and.resolveTo(true);
+        const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
 
-        fixture.componentInstance.handleSave({
+        await fixture.componentInstance.handleSave({
             title: 'Test',
             creator: 'Me',
             itemType: 'book',
@@ -216,27 +224,27 @@ describe(AddItemPageComponent.name, () => {
             description: '',
             notes: '',
         });
-        flush();
+        await fixture.whenStable();
 
         expect(dialogSpy.open).toHaveBeenCalled();
         expect(itemServiceSpy.create).not.toHaveBeenCalled();
         expect(navigateSpy).not.toHaveBeenCalled();
-    }));
+    });
 
-    it('triggers a lookup when a barcode is detected', fakeAsync(() => {
-        itemLookupServiceSpy.lookup.and.returnValue(of([]));
+    it('triggers a lookup when a barcode is detected', async () => {
+        itemLookupServiceSpy.lookup.mockReturnValue(of([]));
         const fixture = createComponent();
-        const submitSpy = spyOn(fixture.componentInstance, 'handleLookupSubmit').and.callThrough();
+        const submitSpy = vi.spyOn(fixture.componentInstance, 'handleLookupSubmit');
 
         fixture.componentInstance.handleDetectedBarcode('9781234567890');
-        flush();
+        await fixture.whenStable();
 
         expect(fixture.componentInstance.searchForm.get('query')?.value).toBe('9781234567890');
         expect(submitSpy).toHaveBeenCalledWith('scanner');
         expect(itemLookupServiceSpy.lookup).toHaveBeenCalledWith('9781234567890', 'book');
-    }));
+    });
 
-    it('prefills series info and navigates to Search tab using the last repeated query param value', fakeAsync(() => {
+    it('prefills series info and navigates to Search tab using the last repeated query param value', async () => {
         queryParamMapSubject.next(
             createParamMap({
                 prefill: ['series'],
@@ -246,14 +254,14 @@ describe(AddItemPageComponent.name, () => {
         );
 
         const fixture = createComponent();
-        flush();
+        await fixture.whenStable();
 
         expect(fixture.componentInstance.seriesPrefill()?.seriesName).toBe('Second Series');
         expect(fixture.componentInstance.seriesPrefill()?.volumeNumber).toBe(2);
         expect(fixture.componentInstance.selectedTab()).toBe(0);
-    }));
+    });
 
-    it('merges series prefill into quick add result', fakeAsync(() => {
+    it('merges series prefill into quick add result', async () => {
         queryParamMapSubject.next(
             createParamMap({
                 prefill: ['series'],
@@ -272,12 +280,12 @@ describe(AddItemPageComponent.name, () => {
             updatedAt: new Date().toISOString(),
         } satisfies Item;
 
-        itemServiceSpy.create.and.returnValue(of(mockItem));
+        itemServiceSpy.create.mockReturnValue(of(mockItem));
         const fixture = createComponent();
-        flush();
+        await fixture.whenStable();
 
         const router = TestBed.inject(Router);
-        spyOn(router, 'navigate').and.resolveTo(true);
+        vi.spyOn(router, 'navigate').mockResolvedValue(true);
 
         const draft: ItemForm = {
             title: 'Prisoner of Azkaban',
@@ -295,14 +303,15 @@ describe(AddItemPageComponent.name, () => {
         };
 
         fixture.componentInstance.handleQuickAdd(draft);
-        flush();
+        await fixture.whenStable();
 
-        const createCall = itemServiceSpy.create.calls.mostRecent().args[0];
+        expect(itemServiceSpy.create).toHaveBeenCalled();
+        const [createCall] = itemServiceSpy.create.mock.calls[0]!;
         expect(createCall.seriesName).toBe('Harry Potter');
         expect(createCall.volumeNumber).toBe(3);
-    }));
+    });
 
-    it('merges series prefill when using lookup result for manual entry', fakeAsync(() => {
+    it('merges series prefill when using lookup result for manual entry', async () => {
         queryParamMapSubject.next(
             createParamMap({
                 prefill: ['series'],
@@ -312,7 +321,7 @@ describe(AddItemPageComponent.name, () => {
         );
 
         const fixture = createComponent();
-        flush();
+        await fixture.whenStable();
 
         const preview: ItemForm = {
             title: 'Prisoner of Azkaban',
@@ -334,11 +343,11 @@ describe(AddItemPageComponent.name, () => {
         expect(fixture.componentInstance.manualDraft()?.seriesName).toBe('Harry Potter');
         expect(fixture.componentInstance.manualDraft()?.volumeNumber).toBe(3);
         expect(fixture.componentInstance.selectedTab()).toBe(1);
-    }));
+    });
 
     it('navigates back when cancel is invoked while idle', () => {
         const router = TestBed.inject(Router);
-        const navigateSpy = spyOn(router, 'navigate').and.resolveTo(true);
+        const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
         const fixture = createComponent();
         fixture.componentInstance.handleCancel();
         expect(navigateSpy).toHaveBeenCalledWith(['/']);
@@ -346,15 +355,15 @@ describe(AddItemPageComponent.name, () => {
 
     it('does not navigate away when canceling while busy', () => {
         const router = TestBed.inject(Router);
-        const navigateSpy = spyOn(router, 'navigate').and.resolveTo(true);
+        const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
         const fixture = createComponent();
         fixture.componentInstance.busy.set(true);
         fixture.componentInstance.handleCancel();
         expect(navigateSpy).not.toHaveBeenCalled();
     });
 
-    it('looks up metadata and pre-fills manual entry on success', fakeAsync(() => {
-        itemLookupServiceSpy.lookup.and.returnValue(
+    it('looks up metadata and pre-fills manual entry on success', async () => {
+        itemLookupServiceSpy.lookup.mockReturnValue(
             of([
                 {
                     title: 'Metadata Title',
@@ -371,7 +380,7 @@ describe(AddItemPageComponent.name, () => {
         const fixture = createComponent();
         fixture.componentInstance.searchForm.setValue({ category: 'book', query: '9780000000002' });
         fixture.componentInstance.handleLookupSubmit();
-        flush();
+        await fixture.whenStable();
 
         expect(itemLookupServiceSpy.lookup).toHaveBeenCalledWith('9780000000002', 'book');
         expect(fixture.componentInstance.manualDraft()?.title).toBe('Metadata Title');
@@ -385,7 +394,7 @@ describe(AddItemPageComponent.name, () => {
             query: '9780000000002',
             label: 'Book',
         });
-    }));
+    });
 
     it('switches to the manual entry tab when using a lookup result manually', () => {
         const fixture = createComponent();
@@ -412,7 +421,7 @@ describe(AddItemPageComponent.name, () => {
         });
     });
 
-    it('adds a lookup result directly to the collection', fakeAsync(() => {
+    it('adds a lookup result directly to the collection', async () => {
         const mockItem = {
             id: 'item-1',
             title: 'Metadata Title',
@@ -423,10 +432,10 @@ describe(AddItemPageComponent.name, () => {
             updatedAt: new Date().toISOString(),
         } satisfies Item;
 
-        itemServiceSpy.create.and.returnValue(of(mockItem));
+        itemServiceSpy.create.mockReturnValue(of(mockItem));
         const fixture = createComponent();
         const router = TestBed.inject(Router);
-        const navigateSpy = spyOn(router, 'navigate').and.resolveTo(true);
+        const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
         const draft: ItemForm = {
             title: 'Metadata Title',
             creator: 'Someone',
@@ -440,35 +449,35 @@ describe(AddItemPageComponent.name, () => {
         } satisfies ItemForm;
 
         fixture.componentInstance.handleQuickAdd(draft);
-        flush();
+        await fixture.whenStable();
 
         expect(itemServiceSpy.create).toHaveBeenCalledWith(draft);
         expect(navigateSpy).toHaveBeenCalledWith(['/']);
-    }));
+    });
 
-    it('stores an error when lookup fails', fakeAsync(() => {
-        itemLookupServiceSpy.lookup.and.returnValue(throwError(() => new Error('network error')));
+    it('stores an error when lookup fails', async () => {
+        itemLookupServiceSpy.lookup.mockReturnValue(throwError(() => new Error('network error')));
 
         const fixture = createComponent();
         fixture.componentInstance.searchForm.setValue({ category: 'book', query: 'bad' });
         fixture.componentInstance.handleLookupSubmit();
-        flush();
+        await fixture.whenStable();
 
         expect(itemLookupServiceSpy.lookup).toHaveBeenCalled();
         expect(fixture.componentInstance.lookupError()).toBeTruthy();
         expect(fixture.componentInstance.manualDraft()).toBeNull();
         expect(fixture.componentInstance.lookupResults().length).toBe(0);
-    }));
+    });
 
-    it('clears the lookup preview when starting fresh', fakeAsync(() => {
-        itemLookupServiceSpy.lookup.and.returnValue(
+    it('clears the lookup preview when starting fresh', async () => {
+        itemLookupServiceSpy.lookup.mockReturnValue(
             of([{ title: 'Metadata Title', creator: 'Someone', releaseYear: 2001 }]),
         );
 
         const fixture = createComponent();
         fixture.componentInstance.searchForm.setValue({ category: 'book', query: 'test' });
         fixture.componentInstance.handleLookupSubmit();
-        flush();
+        await fixture.whenStable();
 
         expect(fixture.componentInstance.lookupResults().length).toBe(1);
 
@@ -476,10 +485,10 @@ describe(AddItemPageComponent.name, () => {
 
         expect(fixture.componentInstance.lookupResults().length).toBe(0);
         expect(fixture.componentInstance.manualDraft()).toBeNull();
-    }));
+    });
 
-    it('uses the server-provided error message when available', fakeAsync(() => {
-        itemLookupServiceSpy.lookup.and.returnValue(
+    it('uses the server-provided error message when available', async () => {
+        itemLookupServiceSpy.lookup.mockReturnValue(
             throwError(
                 () =>
                     new HttpErrorResponse({
@@ -494,35 +503,35 @@ describe(AddItemPageComponent.name, () => {
         const fixture = createComponent();
         fixture.componentInstance.searchForm.setValue({ category: 'game', query: '123456789' });
         fixture.componentInstance.handleLookupSubmit();
-        flush();
+        await fixture.whenStable();
 
         expect(fixture.componentInstance.lookupError()).toBe(
             'metadata lookups for this category are not available yet',
         );
         expect(fixture.componentInstance.manualDraft()).toBeNull();
-    }));
+    });
 
-    it('uploads a CSV file and stores the summary', fakeAsync(() => {
+    it('uploads a CSV file and stores the summary', async () => {
         const summary = {
             totalRows: 2,
             imported: 2,
             skippedDuplicates: [],
             failed: [],
         } satisfies CsvImportSummary;
-        itemServiceSpy.importCsv.and.returnValue(of(summary));
+        itemServiceSpy.importCsv.mockReturnValue(of(summary));
         const fixture = createComponent();
         fixture.componentInstance.selectedCsvFile.set(
             new File(['title'], 'import.csv', { type: 'text/csv' }),
         );
         fixture.componentInstance.handleCsvImportSubmit();
-        flush();
+        await fixture.whenStable();
 
         expect(itemServiceSpy.importCsv).toHaveBeenCalled();
         expect(fixture.componentInstance.importSummary()).toEqual(summary);
-    }));
+    });
 
-    it('captures CSV import errors from the server', fakeAsync(() => {
-        itemServiceSpy.importCsv.and.returnValue(
+    it('captures CSV import errors from the server', async () => {
+        itemServiceSpy.importCsv.mockReturnValue(
             throwError(
                 () =>
                     new HttpErrorResponse({
@@ -536,10 +545,10 @@ describe(AddItemPageComponent.name, () => {
             new File(['title'], 'import.csv', { type: 'text/csv' }),
         );
         fixture.componentInstance.handleCsvImportSubmit();
-        flush();
+        await fixture.whenStable();
 
         expect(fixture.componentInstance.importError()).toBe('missing required columns');
-    }));
+    });
 
     it('keeps the CSV import tab active when selecting a file', () => {
         const fixture = createComponent();

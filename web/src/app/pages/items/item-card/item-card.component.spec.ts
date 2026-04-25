@@ -57,7 +57,7 @@ describe('ItemCardComponent', () => {
     it('should emit cardClicked when card is clicked', () => {
         component.item = mockItem;
         fixture.detectChanges();
-        const spy = spyOn(component.cardClicked, 'emit');
+        const spy = vi.spyOn(component.cardClicked, 'emit');
         const card = fixture.nativeElement.querySelector('.item-card');
         card.click();
         expect(spy).toHaveBeenCalledWith(mockItem);
@@ -66,7 +66,7 @@ describe('ItemCardComponent', () => {
     it('should emit cardClicked on Enter key', () => {
         component.item = mockItem;
         fixture.detectChanges();
-        const spy = spyOn(component.cardClicked, 'emit');
+        const spy = vi.spyOn(component.cardClicked, 'emit');
         const event = new KeyboardEvent('keydown', { key: 'Enter' });
         component.handleCardKeydown(event);
         expect(spy).toHaveBeenCalledWith(mockItem);
@@ -75,7 +75,7 @@ describe('ItemCardComponent', () => {
     it('should emit cardClicked on Space key', () => {
         component.item = mockItem;
         fixture.detectChanges();
-        const spy = spyOn(component.cardClicked, 'emit');
+        const spy = vi.spyOn(component.cardClicked, 'emit');
         const event = new KeyboardEvent('keydown', { key: ' ' });
         component.handleCardKeydown(event);
         expect(spy).toHaveBeenCalledWith(mockItem);
@@ -126,7 +126,7 @@ describe('ItemCardComponent', () => {
         };
         component.item = itemWithShelf;
         fixture.detectChanges();
-        const spy = spyOn(component.shelfLocationClicked, 'emit');
+        const spy = vi.spyOn(component.shelfLocationClicked, 'emit');
         const button = fixture.nativeElement.querySelector('.shelf-location-button');
         button.click();
         expect(spy).toHaveBeenCalled();
@@ -157,13 +157,13 @@ describe('ItemCardComponent', () => {
     it('should emit seriesClicked when series button clicked', () => {
         component.item = itemWithSeries;
         fixture.detectChanges();
-        const spy = spyOn(component.seriesClicked, 'emit');
+        const spy = vi.spyOn(component.seriesClicked, 'emit');
         const button = fixture.nativeElement.querySelector('.series-button');
         button.click();
         expect(spy).toHaveBeenCalledWith(
-            jasmine.objectContaining({
+            expect.objectContaining({
                 item: itemWithSeries,
-                event: jasmine.any(MouseEvent),
+                event: expect.any(MouseEvent),
             }),
         );
     });

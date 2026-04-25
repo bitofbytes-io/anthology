@@ -69,13 +69,13 @@ describe('ItemsGridViewComponent', () => {
     });
 
     it('should emit itemSelected when card is clicked', () => {
-        const spy = spyOn(component.itemSelected, 'emit');
+        const spy = vi.spyOn(component.itemSelected, 'emit');
         component.onItemSelected(mockItems[0]);
         expect(spy).toHaveBeenCalledWith(mockItems[0]);
     });
 
     it('should emit shelfLocationRequested when shelf location is clicked', () => {
-        const spy = spyOn(component.shelfLocationRequested, 'emit');
+        const spy = vi.spyOn(component.shelfLocationRequested, 'emit');
         const event = new MouseEvent('click');
         component.onShelfLocationRequested({ item: mockItems[0], event });
         expect(spy).toHaveBeenCalledWith({ item: mockItems[0], event });

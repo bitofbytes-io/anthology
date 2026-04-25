@@ -43,7 +43,7 @@ describe(CoverSectionComponent.name, () => {
     it('emits coverErrorCleared when clearing cover image', () => {
         const fixture = createComponent();
         const component = fixture.componentInstance;
-        const clearedSpy = jasmine.createSpy('coverErrorCleared');
+        const clearedSpy = vi.fn();
         component.coverErrorCleared.subscribe(clearedSpy);
         form.patchValue({ coverImage: 'https://example.com/cover.jpg' });
 
@@ -55,7 +55,7 @@ describe(CoverSectionComponent.name, () => {
     it('emits coverErrorCleared when clearing cover error', () => {
         const fixture = createComponent();
         const component = fixture.componentInstance;
-        const clearedSpy = jasmine.createSpy('coverErrorCleared');
+        const clearedSpy = vi.fn();
         component.coverErrorCleared.subscribe(clearedSpy);
 
         component.clearCoverError();
@@ -66,7 +66,7 @@ describe(CoverSectionComponent.name, () => {
     it('emits coverErrorCleared when opening file picker', () => {
         const fixture = createComponent();
         const component = fixture.componentInstance;
-        const clearedSpy = jasmine.createSpy('coverErrorCleared');
+        const clearedSpy = vi.fn();
         component.coverErrorCleared.subscribe(clearedSpy);
 
         component.openCoverFilePicker();

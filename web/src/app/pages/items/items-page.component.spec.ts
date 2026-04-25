@@ -26,26 +26,33 @@ class IntersectionObserverStub {
 
 describe(ItemsPageComponent.name, () => {
     let fixture: ComponentFixture<ItemsPageComponent>;
-    let itemServiceSpy: jasmine.SpyObj<ItemService>;
-    let notificationSpy: jasmine.SpyObj<NotificationService>;
+    let itemServiceSpy: {
+        list: ReturnType<typeof vi.fn>;
+        getHistogram: ReturnType<typeof vi.fn>;
+        exportCsv: ReturnType<typeof vi.fn>;
+    };
+    let notificationSpy: {
+        info: ReturnType<typeof vi.fn>;
+        error: ReturnType<typeof vi.fn>;
+    };
     let libraryActions: LibraryActionsService;
 
     beforeEach(async () => {
         (window as any).IntersectionObserver = IntersectionObserverStub;
 
-        itemServiceSpy = jasmine.createSpyObj<ItemService>('ItemService', [
-            'list',
-            'getHistogram',
-            'exportCsv',
-        ]);
-        itemServiceSpy.list.and.returnValue(of([]));
-        itemServiceSpy.getHistogram.and.returnValue(of({}));
-        itemServiceSpy.exportCsv.and.returnValue(of(new Blob(['test'])));
+        itemServiceSpy = {
+            list: vi.fn().mockName('ItemService.list'),
+            getHistogram: vi.fn().mockName('ItemService.getHistogram'),
+            exportCsv: vi.fn().mockName('ItemService.exportCsv'),
+        };
+        itemServiceSpy.list.mockReturnValue(of([]));
+        itemServiceSpy.getHistogram.mockReturnValue(of({}));
+        itemServiceSpy.exportCsv.mockReturnValue(of(new Blob(['test'])));
 
-        notificationSpy = jasmine.createSpyObj<NotificationService>('NotificationService', [
-            'info',
-            'error',
-        ]);
+        notificationSpy = {
+            info: vi.fn().mockName('NotificationService.info'),
+            error: vi.fn().mockName('NotificationService.error'),
+        };
 
         const seriesServiceStub = {
             list: () => of({ series: [], standaloneItems: [] }),
@@ -69,7 +76,7 @@ describe(ItemsPageComponent.name, () => {
 
     it('exports with current filters when export is requested', () => {
         const component = fixture.componentInstance;
-        const downloadSpy = spyOn(component as any, 'downloadBlob');
+        const downloadSpy = vi.spyOn(component as any, 'downloadBlob');
 
         component.setTypeFilter(ItemTypes.Book);
         component.setStatusFilter(BookStatusFilters.Reading);
@@ -88,9 +95,9 @@ describe(ItemsPageComponent.name, () => {
     });
 
     it('shows an error when export fails', () => {
-        itemServiceSpy.exportCsv.and.returnValue(throwError(() => new Error('fail')));
+        itemServiceSpy.exportCsv.mockReturnValue(throwError(() => new Error('fail')));
         const component = fixture.componentInstance;
-        const downloadSpy = spyOn(component as any, 'downloadBlob');
+        const downloadSpy = vi.spyOn(component as any, 'downloadBlob');
 
         libraryActions.requestExport();
 

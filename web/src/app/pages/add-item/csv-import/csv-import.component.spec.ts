@@ -30,7 +30,7 @@ describe('CsvImportComponent', () => {
     });
 
     it('should emit fileSelected when a valid file is selected', () => {
-        const spy = spyOn(component.fileSelected, 'emit');
+        const spy = vi.spyOn(component.fileSelected, 'emit');
         const file = new File(['test'], 'test.csv', { type: 'text/csv' });
         const event = { target: { files: [file] } } as unknown as Event;
 
@@ -41,7 +41,7 @@ describe('CsvImportComponent', () => {
     });
 
     it('should emit importSubmit when form is submitted with a file', () => {
-        const spy = spyOn(component.importSubmit, 'emit');
+        const spy = vi.spyOn(component.importSubmit, 'emit');
         const file = new File(['test'], 'test.csv', { type: 'text/csv' });
         component.selectedFile.set(file);
 
@@ -51,7 +51,7 @@ describe('CsvImportComponent', () => {
     });
 
     it('should emit cleared when handleReset is called', () => {
-        const spy = spyOn(component.cleared, 'emit');
+        const spy = vi.spyOn(component.cleared, 'emit');
         component.selectedFile.set(new File(['test'], 'test.csv'));
 
         component.handleReset();
