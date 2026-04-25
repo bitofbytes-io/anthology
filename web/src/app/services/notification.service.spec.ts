@@ -6,11 +6,13 @@ import { NotificationService } from './notification.service';
 
 describe('NotificationService', () => {
     let service: NotificationService;
-    let snackBarSpy: jasmine.SpyObj<MatSnackBar>;
+    let snackBarSpy: { open: ReturnType<typeof vi.fn> };
 
     beforeEach(() => {
-        snackBarSpy = jasmine.createSpyObj('MatSnackBar', ['open']);
-        snackBarSpy.open.and.returnValue({} as any);
+        snackBarSpy = {
+            open: vi.fn().mockName('MatSnackBar.open'),
+        };
+        snackBarSpy.open.mockReturnValue({} as any);
 
         TestBed.configureTestingModule({
             imports: [MatSnackBarModule, NoopAnimationsModule],
@@ -31,7 +33,7 @@ describe('NotificationService', () => {
             expect(snackBarSpy.open).toHaveBeenCalledWith(
                 'Test message',
                 'Dismiss',
-                jasmine.objectContaining({
+                expect.objectContaining({
                     duration: 4000,
                     horizontalPosition: 'center',
                     verticalPosition: 'bottom',
@@ -45,7 +47,7 @@ describe('NotificationService', () => {
             expect(snackBarSpy.open).toHaveBeenCalledWith(
                 'Test message',
                 'Dismiss',
-                jasmine.objectContaining({ duration: 2000 }),
+                expect.objectContaining({ duration: 2000 }),
             );
         });
 
@@ -55,7 +57,7 @@ describe('NotificationService', () => {
             expect(snackBarSpy.open).toHaveBeenCalledWith(
                 'Test message',
                 'Undo',
-                jasmine.any(Object),
+                expect.any(Object),
             );
         });
     });
@@ -67,7 +69,7 @@ describe('NotificationService', () => {
             expect(snackBarSpy.open).toHaveBeenCalledWith(
                 'Item saved',
                 'Dismiss',
-                jasmine.objectContaining({
+                expect.objectContaining({
                     panelClass: ['notification-success'],
                 }),
             );
@@ -81,7 +83,7 @@ describe('NotificationService', () => {
             expect(snackBarSpy.open).toHaveBeenCalledWith(
                 'Something went wrong',
                 'Dismiss',
-                jasmine.objectContaining({
+                expect.objectContaining({
                     duration: 5000,
                     panelClass: ['notification-error'],
                 }),
@@ -96,7 +98,7 @@ describe('NotificationService', () => {
             expect(snackBarSpy.open).toHaveBeenCalledWith(
                 'Duplicate check failed',
                 'Dismiss',
-                jasmine.objectContaining({
+                expect.objectContaining({
                     panelClass: ['notification-warn'],
                 }),
             );
@@ -110,7 +112,7 @@ describe('NotificationService', () => {
             expect(snackBarSpy.open).toHaveBeenCalledWith(
                 'FYI message',
                 'Dismiss',
-                jasmine.objectContaining({
+                expect.objectContaining({
                     duration: 4000,
                 }),
             );

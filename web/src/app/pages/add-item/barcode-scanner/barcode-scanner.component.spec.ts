@@ -25,7 +25,7 @@ describe('BarcodeScannerComponent', () => {
         fixture.detectChanges();
 
         const preview = fixture.nativeElement.querySelector('.scanner-preview');
-        expect(preview.classList.contains('scanner-preview--visible')).toBeFalse();
+        expect(preview.classList.contains('scanner-preview--visible')).toBe(false);
     });
 
     it('should show scanner preview when active', () => {
@@ -33,7 +33,7 @@ describe('BarcodeScannerComponent', () => {
         fixture.detectChanges();
 
         const preview = fixture.nativeElement.querySelector('.scanner-preview');
-        expect(preview.classList.contains('scanner-preview--visible')).toBeTrue();
+        expect(preview.classList.contains('scanner-preview--visible')).toBe(true);
     });
 
     it('should show scanner status when active and status is set', () => {

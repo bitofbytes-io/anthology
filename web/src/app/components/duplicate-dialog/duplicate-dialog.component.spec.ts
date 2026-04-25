@@ -11,7 +11,7 @@ import {
 describe('DuplicateDialogComponent', () => {
     let component: DuplicateDialogComponent;
     let fixture: ComponentFixture<DuplicateDialogComponent>;
-    let dialogRefSpy: jasmine.SpyObj<MatDialogRef<DuplicateDialogComponent, DuplicateDialogResult>>;
+    let dialogRefSpy: { close: ReturnType<typeof vi.fn> };
 
     const mockDialogData: DuplicateDialogData = {
         duplicates: [
@@ -29,7 +29,9 @@ describe('DuplicateDialogComponent', () => {
     };
 
     beforeEach(async () => {
-        dialogRefSpy = jasmine.createSpyObj('MatDialogRef', ['close']);
+        dialogRefSpy = {
+            close: vi.fn().mockName('MatDialogRef.close'),
+        };
 
         await TestBed.configureTestingModule({
             imports: [DuplicateDialogComponent, NoopAnimationsModule],
@@ -70,7 +72,7 @@ describe('DuplicateDialogComponent', () => {
     });
 
     it('should not show more duplicates message when totalCount equals duplicates length', () => {
-        expect(component.hasMoreDuplicates).toBeFalse();
+        expect(component.hasMoreDuplicates).toBe(false);
     });
 
     describe('with more duplicates', () => {
@@ -96,7 +98,7 @@ describe('DuplicateDialogComponent', () => {
         });
 
         it('should show more duplicates message when totalCount exceeds duplicates length', () => {
-            expect(component.hasMoreDuplicates).toBeTrue();
+            expect(component.hasMoreDuplicates).toBe(true);
             expect(component.additionalCount).toBe(6);
         });
     });

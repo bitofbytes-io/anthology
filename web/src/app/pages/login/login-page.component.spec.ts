@@ -6,13 +6,16 @@ import { LoginPageComponent } from './login-page.component';
 import { AuthService } from '../../services/auth.service';
 
 describe(LoginPageComponent.name, () => {
-    let authServiceSpy: jasmine.SpyObj<AuthService>;
+    let authServiceSpy: {
+        loginWithGoogle: ReturnType<typeof vi.fn>;
+        logout: ReturnType<typeof vi.fn>;
+    };
 
     beforeEach(async () => {
-        authServiceSpy = jasmine.createSpyObj<AuthService>('AuthService', [
-            'loginWithGoogle',
-            'logout',
-        ]);
+        authServiceSpy = {
+            loginWithGoogle: vi.fn().mockName('AuthService.loginWithGoogle'),
+            logout: vi.fn().mockName('AuthService.logout'),
+        };
 
         await TestBed.configureTestingModule({
             imports: [LoginPageComponent],
@@ -41,7 +44,7 @@ describe(LoginPageComponent.name, () => {
         component.loginWithGoogle();
 
         expect(authServiceSpy.loginWithGoogle).toHaveBeenCalledWith('/items');
-        expect(component.submitting()).toBeTrue();
+        expect(component.submitting()).toBe(true);
     });
 
     it('calls loginWithGoogle without redirectTo when none is provided', async () => {
@@ -66,7 +69,7 @@ describe(LoginPageComponent.name, () => {
         component.loginWithGoogle();
 
         expect(authServiceSpy.loginWithGoogle).toHaveBeenCalledWith(undefined);
-        expect(component.submitting()).toBeTrue();
+        expect(component.submitting()).toBe(true);
     });
 
     it('shows error message when query params contain error', async () => {
@@ -124,24 +127,24 @@ describe(LoginPageComponent.name, () => {
     });
 
     it('clears the session when clearSession is called', () => {
-        authServiceSpy.logout.and.returnValue(of(void 0));
+        authServiceSpy.logout.mockReturnValue(of(void 0));
         const fixture = createComponent();
         const component = fixture.componentInstance;
 
         component.clearSession();
 
         expect(authServiceSpy.logout).toHaveBeenCalled();
-        expect(component.submitting()).toBeFalse();
+        expect(component.submitting()).toBe(false);
     });
 
     it('shows error when logout fails', () => {
-        authServiceSpy.logout.and.returnValue(throwError(() => new Error('Network error')));
+        authServiceSpy.logout.mockReturnValue(throwError(() => new Error('Network error')));
         const fixture = createComponent();
         const component = fixture.componentInstance;
 
         component.clearSession();
 
         expect(component.errorMessage()).toContain('could not clear');
-        expect(component.submitting()).toBeFalse();
+        expect(component.submitting()).toBe(false);
     });
 });

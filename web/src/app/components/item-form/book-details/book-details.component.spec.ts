@@ -41,7 +41,11 @@ describe(BookDetailsComponent.name, () => {
         }).compileComponents();
     });
 
-    function createComponent({ hasSeriesData = false }: { hasSeriesData?: boolean } = {}) {
+    function createComponent({
+        hasSeriesData = false,
+    }: {
+        hasSeriesData?: boolean;
+    } = {}) {
         const fixture = TestBed.createComponent(BookDetailsComponent);
         fixture.componentInstance.form = form;
         fixture.componentInstance.bookStatusOptions = [
@@ -121,7 +125,7 @@ describe(BookDetailsComponent.name, () => {
         const component = fixture.componentInstance;
         form.patchValue({ readingStatus: BookStatus.Read });
 
-        expect(component.isReadStatus).toBeTrue();
+        expect(component.isReadStatus).toBe(true);
     });
 
     it('returns true for isReadingStatus when reading status is Reading', () => {
@@ -129,7 +133,7 @@ describe(BookDetailsComponent.name, () => {
         const component = fixture.componentInstance;
         form.patchValue({ readingStatus: BookStatus.Reading });
 
-        expect(component.isReadingStatus).toBeTrue();
+        expect(component.isReadingStatus).toBe(true);
     });
 
     it('clears the series name when requested', () => {
@@ -167,26 +171,26 @@ describe(BookDetailsComponent.name, () => {
             const fixture = createComponent();
             const component = fixture.componentInstance;
 
-            expect(component.seriesExpanded()).toBeFalse();
+            expect(component.seriesExpanded()).toBe(false);
         });
 
         it('should auto-expand series section when hasSeriesData is true', () => {
             const fixture = createComponent({ hasSeriesData: true });
 
-            expect(fixture.componentInstance.seriesExpanded()).toBeTrue();
+            expect(fixture.componentInstance.seriesExpanded()).toBe(true);
         });
 
         it('should toggle series section visibility', () => {
             const fixture = createComponent();
             const component = fixture.componentInstance;
 
-            expect(component.seriesExpanded()).toBeFalse();
+            expect(component.seriesExpanded()).toBe(false);
 
             component.toggleSeriesSection();
-            expect(component.seriesExpanded()).toBeTrue();
+            expect(component.seriesExpanded()).toBe(true);
 
             component.toggleSeriesSection();
-            expect(component.seriesExpanded()).toBeFalse();
+            expect(component.seriesExpanded()).toBe(false);
         });
 
         it('should show series fields when expanded', () => {

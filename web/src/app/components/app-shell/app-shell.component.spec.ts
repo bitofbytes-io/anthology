@@ -15,13 +15,17 @@ import { AuthService } from '../../services/auth.service';
 class TestPageComponent {}
 
 describe(AppShellComponent.name, () => {
-    let authServiceSpy: jasmine.SpyObj<AuthService>;
-    let snackBarSpy: jasmine.SpyObj<MatSnackBar>;
+    let authServiceSpy: { logout: ReturnType<typeof vi.fn> };
+    let snackBarSpy: { open: ReturnType<typeof vi.fn> };
 
     beforeEach(async () => {
-        authServiceSpy = jasmine.createSpyObj<AuthService>('AuthService', ['logout']);
-        snackBarSpy = jasmine.createSpyObj<MatSnackBar>('MatSnackBar', ['open']);
-        authServiceSpy.logout.and.returnValue(of(void 0));
+        authServiceSpy = {
+            logout: vi.fn().mockName('AuthService.logout'),
+        };
+        snackBarSpy = {
+            open: vi.fn().mockName('MatSnackBar.open'),
+        };
+        authServiceSpy.logout.mockReturnValue(of(void 0));
 
         await TestBed.configureTestingModule({
             imports: [AppShellComponent],

@@ -34,25 +34,25 @@ describe('ItemsFilterPanelComponent', () => {
     });
 
     it('should emit typeFilterChange when type is selected', () => {
-        const spy = spyOn(component.typeFilterChange, 'emit');
+        const spy = vi.spyOn(component.typeFilterChange, 'emit');
         component.onTypeChange(ItemTypes.Book);
         expect(spy).toHaveBeenCalledWith(ItemTypes.Book);
     });
 
     it('should emit statusFilterChange when status is selected', () => {
-        const spy = spyOn(component.statusFilterChange, 'emit');
+        const spy = vi.spyOn(component.statusFilterChange, 'emit');
         component.onStatusChange(BookStatusFilters.Reading);
         expect(spy).toHaveBeenCalledWith(BookStatusFilters.Reading);
     });
 
     it('should emit shelfStatusFilterChange when shelf status is selected', () => {
-        const spy = spyOn(component.shelfStatusFilterChange, 'emit');
+        const spy = vi.spyOn(component.shelfStatusFilterChange, 'emit');
         component.onShelfStatusChange(ShelfStatusFilters.On);
         expect(spy).toHaveBeenCalledWith(ShelfStatusFilters.On);
     });
 
     it('should emit viewModeChange when view toggle is clicked', () => {
-        const spy = spyOn(component.viewModeChange, 'emit');
+        const spy = vi.spyOn(component.viewModeChange, 'emit');
         component.onViewModeChange('grid');
         expect(spy).toHaveBeenCalledWith('grid');
     });
@@ -67,9 +67,9 @@ describe('ItemsFilterPanelComponent', () => {
     it('should show active class on table button when table view', () => {
         const compiled = fixture.nativeElement as HTMLElement;
         const buttons = compiled.querySelectorAll('.view-toggle button');
-        expect(buttons[0].classList.contains('active')).toBeTrue();
-        expect(buttons[1].classList.contains('active')).toBeFalse();
-        expect(buttons[2].classList.contains('active')).toBeFalse();
+        expect(buttons[0].classList.contains('active')).toBe(true);
+        expect(buttons[1].classList.contains('active')).toBe(false);
+        expect(buttons[2].classList.contains('active')).toBe(false);
     });
 
     it('should show active class on grid button when grid view', () => {
@@ -77,9 +77,9 @@ describe('ItemsFilterPanelComponent', () => {
         fixture.detectChanges();
         const compiled = fixture.nativeElement as HTMLElement;
         const buttons = compiled.querySelectorAll('.view-toggle button');
-        expect(buttons[0].classList.contains('active')).toBeFalse();
-        expect(buttons[1].classList.contains('active')).toBeTrue();
-        expect(buttons[2].classList.contains('active')).toBeFalse();
+        expect(buttons[0].classList.contains('active')).toBe(false);
+        expect(buttons[1].classList.contains('active')).toBe(true);
+        expect(buttons[2].classList.contains('active')).toBe(false);
     });
 
     it('should show active class on series button when series view', () => {
@@ -87,13 +87,13 @@ describe('ItemsFilterPanelComponent', () => {
         fixture.detectChanges();
         const compiled = fixture.nativeElement as HTMLElement;
         const buttons = compiled.querySelectorAll('.view-toggle button');
-        expect(buttons[0].classList.contains('active')).toBeFalse();
-        expect(buttons[1].classList.contains('active')).toBeFalse();
-        expect(buttons[2].classList.contains('active')).toBeTrue();
+        expect(buttons[0].classList.contains('active')).toBe(false);
+        expect(buttons[1].classList.contains('active')).toBe(false);
+        expect(buttons[2].classList.contains('active')).toBe(true);
     });
 
     it('should emit viewModeChange with series when series button clicked', () => {
-        const spy = spyOn(component.viewModeChange, 'emit');
+        const spy = vi.spyOn(component.viewModeChange, 'emit');
         component.onViewModeChange('series');
         expect(spy).toHaveBeenCalledWith('series');
     });

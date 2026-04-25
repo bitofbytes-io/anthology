@@ -28,8 +28,6 @@ export class ItemCardComponent {
     @Output() shelfLocationClicked = new EventEmitter<{ item: Item; event: MouseEvent }>();
     @Output() seriesClicked = new EventEmitter<{ item: Item; event: MouseEvent }>();
 
-    readonly BookStatus = BookStatus;
-
     onCardClick(): void {
         this.cardClicked.emit(this.item);
     }
@@ -60,6 +58,10 @@ export class ItemCardComponent {
 
     readingProgress(item: Item): ReadingProgress | null {
         return readingProgress(item);
+    }
+
+    isRead(item: Item): boolean {
+        return item.readingStatus === BookStatus.Read;
     }
 
     chipClassFor(item: Item): string {

@@ -64,7 +64,7 @@
         @if (readingStatusLabel(item); as statusLabel) {
             <p class="card-sub">
                 <span class="status-chip">{{ statusLabel }}</span>
-                @if (item.readingStatus === BookStatus.Read && item.readAt) {
+                @if (isRead(item) && item.readAt) {
                     • Read {{ item.readAt | date: 'mediumDate' }}
                 }
                 @if (readingProgress(item); as progress) {

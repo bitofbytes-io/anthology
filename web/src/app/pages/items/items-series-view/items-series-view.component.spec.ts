@@ -28,7 +28,7 @@ describe(ItemsSeriesViewComponent.name, () => {
     it('emits seriesToggled when panel is toggled', () => {
         const fixture = createComponent();
         const component = fixture.componentInstance;
-        const spy = jasmine.createSpy('seriesToggled');
+        const spy = vi.fn();
         component.seriesToggled.subscribe(spy);
 
         component.onPanelToggle('Harry Potter');
@@ -39,7 +39,7 @@ describe(ItemsSeriesViewComponent.name, () => {
     it('emits addMissingVolume with series name and volume number', () => {
         const fixture = createComponent();
         const component = fixture.componentInstance;
-        const spy = jasmine.createSpy('addMissingVolume');
+        const spy = vi.fn();
         component.addMissingVolume.subscribe(spy);
 
         component.onAddMissingVolume('Harry Potter', 3);

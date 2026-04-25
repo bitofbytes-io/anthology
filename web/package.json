@@ -6,8 +6,8 @@
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test --watch=false --browsers=ChromeHeadless",
-    "test-watch": "ng test --browsers=Chrome",
+    "test": "ng test --watch=false",
+    "test-watch": "ng test",
     "lint": "ng lint && stylelint \"src/**/*.scss\" && prettier --check \"src/**/*.{ts,html,scss,json}\"",
     "lint:fix": "ng lint --fix && stylelint \"src/**/*.scss\" --fix && prettier --write \"src/**/*.{ts,html,scss,json}\"",
     "format": "prettier --write \"src/**/*.{ts,html,scss,json}\""
@@ -26,6 +26,9 @@
     ]
   },
   "private": true,
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "dependencies": {
     "@angular/animations": "^21.2.10",
     "@angular/cdk": "^21.2.8",
@@ -52,20 +55,15 @@
     "@angular/cli": "^21.2.8",
     "@angular/compiler-cli": "^21.2.10",
     "@eslint/eslintrc": "^3.3.5",
-    "@types/jasmine": "~6.0.0",
     "@typescript-eslint/eslint-plugin": "^8.59.0",
     "@typescript-eslint/parser": "^8.59.0",
     "baseline-browser-mapping": "^2.10.21",
     "eslint": "^10.2.1",
-    "jasmine-core": "~6.2.0",
-    "karma": "~6.4.4",
-    "karma-chrome-launcher": "~3.2.0",
-    "karma-coverage": "~2.2.1",
-    "karma-jasmine": "~5.1.0",
-    "karma-jasmine-html-reporter": "~2.2.0",
+    "happy-dom": "^20.0.5",
     "prettier": "^3.8.3",
     "stylelint": "^17.9.0",
     "stylelint-config-standard-scss": "^17.0.0",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "vitest": "^4.0.8"
   }
 }

@@ -7,7 +7,7 @@ import { environment } from '../config/environment';
 describe(AuthService.name, () => {
     let service: AuthService;
     let httpMock: HttpTestingController;
-    let redirectSpy: jasmine.Spy;
+    let redirectSpy: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
         TestBed.configureTestingModule({
@@ -17,12 +17,22 @@ describe(AuthService.name, () => {
         service = TestBed.inject(AuthService);
         httpMock = TestBed.inject(HttpTestingController);
 
-        redirectSpy = spyOn(service as any, 'redirectTo');
+        redirectSpy = vi.spyOn(service as any, 'redirectTo');
     });
 
     afterEach(() => {
         httpMock.verify();
     });
+
+    function setSessionState(value: { authenticated: boolean }) {
+        (
+            service as unknown as {
+                sessionState: {
+                    next: (value: { authenticated: boolean }) => void;
+                };
+            }
+        ).sessionState.next(value);
+    }
 
     it('redirects to Google OAuth without redirectTo when none is provided', () => {
         service.loginWithGoogle();
@@ -45,7 +55,7 @@ describe(AuthService.name, () => {
     });
 
     it('returns cached session state without making a request', () => {
-        (service as unknown as { sessionState: { next: (value: any) => void } }).sessionState.next({
+        setSessionState({
             authenticated: true,
         });
 
@@ -54,7 +64,7 @@ describe(AuthService.name, () => {
             value = result;
         });
 
-        expect(value).toBeTrue();
+        expect(value).toBe(true);
         httpMock.expectNone(`${environment.apiUrl}/session`);
     });
 
@@ -65,14 +75,14 @@ describe(AuthService.name, () => {
         });
 
         const req = httpMock.expectOne(`${environment.apiUrl}/session`);
-        expect(req.request.withCredentials).toBeTrue();
+        expect(req.request.withCredentials).toBe(true);
         req.flush({
             authenticated: true,
             user: { id: '1', email: 'user@example.com', name: 'User', avatarUrl: 'avatar.png' },
         });
 
-        expect(value).toBeTrue();
-        expect(service.isAuthenticated()).toBeTrue();
+        expect(value).toBe(true);
+        expect(service.isAuthenticated()).toBe(true);
         expect(service.getUser()?.email).toBe('user@example.com');
     });
 
@@ -85,12 +95,12 @@ describe(AuthService.name, () => {
         const req = httpMock.expectOne(`${environment.apiUrl}/session`);
         req.flush({ message: 'unauthorized' }, { status: 401, statusText: 'Unauthorized' });
 
-        expect(value).toBeFalse();
-        expect(service.isAuthenticated()).toBeFalse();
+        expect(value).toBe(false);
+        expect(service.isAuthenticated()).toBe(false);
     });
 
     it('clears session state on logout success', () => {
-        (service as unknown as { sessionState: { next: (value: any) => void } }).sessionState.next({
+        setSessionState({
             authenticated: true,
         });
 
@@ -98,10 +108,10 @@ describe(AuthService.name, () => {
 
         const req = httpMock.expectOne(`${environment.apiUrl}/session`);
         expect(req.request.method).toBe('DELETE');
-        expect(req.request.withCredentials).toBeTrue();
+        expect(req.request.withCredentials).toBe(true);
         req.flush(null);
 
-        expect(service.isAuthenticated()).toBeFalse();
+        expect(service.isAuthenticated()).toBe(false);
         expect(service.getUser()).toBeNull();
     });
 
@@ -117,6 +127,6 @@ describe(AuthService.name, () => {
         req.flush({ message: 'unauthorized' }, { status: 401, statusText: 'Unauthorized' });
 
         expect(error).toBeUndefined();
-        expect(service.isAuthenticated()).toBeFalse();
+        expect(service.isAuthenticated()).toBe(false);
     });
 });

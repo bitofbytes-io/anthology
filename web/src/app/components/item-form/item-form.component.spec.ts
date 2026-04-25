@@ -49,7 +49,7 @@ describe(ItemFormComponent.name, () => {
         });
 
         expect(component.form.value).toEqual(
-            jasmine.objectContaining({
+            expect.objectContaining({
                 title: 'Neuromancer',
                 creator: 'William Gibson',
                 itemType: 'book',
@@ -70,14 +70,14 @@ describe(ItemFormComponent.name, () => {
         component.form.patchValue({ title: '' });
         component.submit();
 
-        expect(component.form.get('title')?.touched).toBeTrue();
-        expect(component.form.valid).toBeFalse();
+        expect(component.form.get('title')?.touched).toBe(true);
+        expect(component.form.valid).toBe(false);
     });
 
     it('emits normalized form values on submit', () => {
         const fixture = createComponent();
         const component = fixture.componentInstance;
-        const saveSpy = jasmine.createSpy('save');
+        const saveSpy = vi.fn();
         component.save.subscribe(saveSpy);
 
         component.form.setValue({
@@ -110,7 +110,7 @@ describe(ItemFormComponent.name, () => {
         component.submit();
 
         expect(saveSpy).toHaveBeenCalledWith(
-            jasmine.objectContaining({
+            expect.objectContaining({
                 title: 'Arrival',
                 releaseYear: null,
                 pageCount: null,
@@ -141,7 +141,7 @@ describe(ItemFormComponent.name, () => {
 
         component.submit();
 
-        expect(component.form.get('currentPage')?.hasError('maxPages')).toBeTrue();
+        expect(component.form.get('currentPage')?.hasError('maxPages')).toBe(true);
     });
 
     it('sets cover error when onCoverErrorSet is called', () => {
