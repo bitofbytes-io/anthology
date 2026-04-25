@@ -38,11 +38,11 @@ configure-image: ## Evaluate container image metadata defaults.
 	$(eval REVISION ?= $(shell git rev-parse HEAD 2>/dev/null))
 	$(eval IMAGE_TAG ?= $(if $(SHORT_SHA),$(SHORT_SHA),dev))
 	$(eval VERSION ?= $(IMAGE_TAG))
-	$(eval SOURCE_URL ?= https://github.com/drywaters/anthology)
+	$(eval SOURCE_URL ?= https://github.com/bitofbytes-io/anthology)
 	$(eval API_IMAGE := $(REGISTRY)/$(API_IMAGE_REPO):$(IMAGE_TAG))
 	$(eval UI_IMAGE := $(REGISTRY)/$(UI_IMAGE_REPO):$(IMAGE_TAG))
-	$(eval API_OCI_LABEL_ARGS := --label org.opencontainers.image.source=$(SOURCE_URL) --label org.opencontainers.image.revision=$(REVISION) --label org.opencontainers.image.version=$(VERSION) --label org.opencontainers.image.title=anthology-api --label org.opencontainers.image.description=Anthology API service)
-	$(eval UI_OCI_LABEL_ARGS := --label org.opencontainers.image.source=$(SOURCE_URL) --label org.opencontainers.image.revision=$(REVISION) --label org.opencontainers.image.version=$(VERSION) --label org.opencontainers.image.title=anthology-ui --label org.opencontainers.image.description=Anthology UI service)
+	$(eval API_OCI_LABEL_ARGS := --label "org.opencontainers.image.source=$(SOURCE_URL)" --label "org.opencontainers.image.revision=$(REVISION)" --label "org.opencontainers.image.version=$(VERSION)" --label "org.opencontainers.image.title=anthology-api" --label "org.opencontainers.image.description=Anthology API service")
+	$(eval UI_OCI_LABEL_ARGS := --label "org.opencontainers.image.source=$(SOURCE_URL)" --label "org.opencontainers.image.revision=$(REVISION)" --label "org.opencontainers.image.version=$(VERSION)" --label "org.opencontainers.image.title=anthology-ui" --label "org.opencontainers.image.description=Anthology UI service")
 	@true
 
 ensure-image-tag: configure-image ## Abort if git metadata is unavailable for image tagging.
@@ -114,6 +114,7 @@ docker-build-api: configure-image ## Build the API container image.
 		--build-arg LOG_LEVEL=$(LOG_LEVEL) \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg REVISION=$(REVISION) \
+		--build-arg SOURCE_URL=$(SOURCE_URL) \
 		$(API_OCI_LABEL_ARGS) \
 		-t $(API_IMAGE) \
 		.
@@ -124,6 +125,7 @@ docker-build-ui: configure-image ## Build the UI container image.
 		-f Docker/Dockerfile.ui \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg REVISION=$(REVISION) \
+		--build-arg SOURCE_URL=$(SOURCE_URL) \
 		$(UI_OCI_LABEL_ARGS) \
 		-t $(UI_IMAGE) \
 		.
@@ -153,6 +155,7 @@ docker-buildx-api: ensure-image-tag ## Build and push a multi-arch API image via
 		--build-arg LOG_LEVEL=$(LOG_LEVEL) \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg REVISION=$(REVISION) \
+		--build-arg SOURCE_URL=$(SOURCE_URL) \
 		$(API_OCI_LABEL_ARGS) \
 		-t $(API_IMAGE) \
 		--push \
@@ -167,6 +170,7 @@ docker-buildx-ui: ensure-image-tag ## Build and push a multi-arch UI image via b
 		--platform=$(PLATFORMS) \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg REVISION=$(REVISION) \
+		--build-arg SOURCE_URL=$(SOURCE_URL) \
 		$(UI_OCI_LABEL_ARGS) \
 		-t $(UI_IMAGE) \
 		--push \

@@ -18,6 +18,7 @@ FROM alpine:3.23.4
 ARG LOG_LEVEL=info
 ARG VERSION=dev
 ARG REVISION=unknown
+ARG SOURCE_URL=https://github.com/bitofbytes-io/anthology
 WORKDIR /app
 
 RUN apk add --no-cache ca-certificates
@@ -29,7 +30,7 @@ RUN addgroup -S anthology \
     && adduser -S -G anthology anthology \
     && chown -R anthology:anthology /app
 
-LABEL org.opencontainers.image.source="https://github.com/drywaters/anthology" \
+LABEL org.opencontainers.image.source="${SOURCE_URL}" \
       org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.title="anthology-api" \
