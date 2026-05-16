@@ -12,12 +12,16 @@ Anthology is a two-tier catalogue: a Go 1.25 API (under `cmd/api` + `internal/`)
 - `docs/architecture/` & `docs/planning/`: architecture diagrams, startup flows, Material guidelines, and roadmap notes.
 
 ## Build, Test, and Development Commands
-- `go run ./cmd/api` — boots the API using the current env vars; requires Postgres (`DATA_STORE=postgres` + `DATABASE_URL`) and applies Goose migrations on startup.
-- `go test ./...` — Go unit tests (catalog lookups, importer, services, handlers).
-- `cd web && npm install` — install Angular deps (Material, CLI, test runners).
-- `cd web && npm start` — Angular dev server on `http://localhost:4200` proxying to the API URL defined in the meta tag/runtime config.
-- `cd web && npm test -- --watch=false` and `npm run lint` — Jasmine/Karma suite plus ESLint.
+- `make api-run` (or `make run`) — boots the API using `local.mk`/current env vars; requires Postgres (`DATA_STORE=postgres` + `DATABASE_URL`) and applies Goose migrations on startup.
+- `make api-test` — Go unit tests (catalog lookups, importer, services, handlers); equivalent to `go test ./...`.
+- `make api-lint`, `make fmt`, and `make tidy` — run `golangci-lint`, format Go sources, and tidy modules.
+- `make web-install` — install Angular deps under `web/`.
+- `make web-start` — Angular dev server on `http://localhost:4200` proxying to the API URL defined in the meta tag/runtime config.
+- `make web-test` and `make web-lint` — Jasmine/Karma suite plus ESLint.
+- `make lint` — run both Go and Angular lint checks.
 - `make local` — convenience target to boot the API and Angular dev server together for end-to-end checks.
+- `make build` — run API tests and web tests, then build both container images.
+- `make docker-buildx` — build and push multi-arch API/UI images; set registry/tag inputs locally or in CI.
 
 ## Coding Style & Naming Conventions
 - Go: auto-format with `gofmt`, keep imports sorted, use short receiver names, and follow package boundaries like `internal/items`. Exported types mirror the `ItemService`/`ItemRepository` style. Logging uses `slog`.
