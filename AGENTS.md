@@ -12,12 +12,16 @@ Anthology is a two-tier catalogue: a Go 1.25 API (under `cmd/api` + `internal/`)
 - `docs/architecture/` & `docs/planning/`: architecture diagrams, startup flows, Material guidelines, and roadmap notes.
 
 ## Build, Test, and Development Commands
-- `go run ./cmd/api` — boots the API using the current env vars; requires Postgres (`DATA_STORE=postgres` + `DATABASE_URL`) and applies Goose migrations on startup.
-- `go test ./...` — Go unit tests (catalog lookups, importer, services, handlers).
-- `cd web && npm install` — install Angular deps (Material, CLI, test runners).
-- `cd web && npm start` — Angular dev server on `http://localhost:4200` proxying to the API URL defined in the meta tag/runtime config.
-- `cd web && npm test -- --watch=false` and `npm run lint` — Jasmine/Karma suite plus ESLint.
+- `make api-run` (or `make run`) — boots the API using `local.mk`/current env vars; requires Postgres (`DATA_STORE=postgres` + `DATABASE_URL`) and applies Goose migrations on startup.
+- `make api-test` — Go unit tests (catalog lookups, importer, services, handlers); equivalent to `go test ./...`.
+- `make api-lint`, `make fmt`, and `make tidy` — run `golangci-lint`, format Go sources, and tidy modules.
+- `make web-install` — install Angular deps under `web/`.
+- `make web-start` — Angular dev server on `http://localhost:4200` proxying to the API URL defined in the meta tag/runtime config.
+- `make web-test` and `make web-lint` — Jasmine/Karma suite plus ESLint.
+- `make lint` — run both Go and Angular lint checks.
 - `make local` — convenience target to boot the API and Angular dev server together for end-to-end checks.
+- `make build` — run API tests and web tests, then build both container images.
+- `make docker-buildx` — build and push multi-arch API/UI images; set registry/tag inputs locally or in CI.
 
 ## Coding Style & Naming Conventions
 - Go: auto-format with `gofmt`, keep imports sorted, use short receiver names, and follow package boundaries like `internal/items`. Exported types mirror the `ItemService`/`ItemRepository` style. Logging uses `slog`.
@@ -37,7 +41,7 @@ Anthology is a two-tier catalogue: a Go 1.25 API (under `cmd/api` + `internal/`)
 ## Testing & Validation Guidelines
 - Backend tests live next to their code (`*_test.go`); cover validation, repository behaviour, importer edge cases, catalog lookups, shelf layout validation, and displacement/placement flows.
 - Frontend specs (`*.spec.ts`) mirror component paths, covering search flow, manual entry, CSV imports, and UI copy.
-- Run `go test ./...`, `npm test -- --watch=false`, and `npm run lint` before every PR. Hook `githooks/pre-commit` into `.git/hooks` to enforce `golangci-lint run ./...` plus `npm run lint` unless `SKIP_PRECOMMIT_LINT=1` is set.
+- Run `make api-test`, `make web-test`, and `make lint` before every PR. Hook `githooks/pre-commit` into `.git/hooks` to enforce `golangci-lint run ./...` plus `npm run lint` unless `SKIP_PRECOMMIT_LINT=1` is set.
 - Validate UI work in the running Angular app when feasible: use Playwright automation by default for navigation/capture, grab at least one screenshot (include scrolled states if relevant) from `http://localhost:4200`, and log any console or network errors.
 - Before running Playwright/browser verification, confirm with the user that the local server is running (`make local`, or API/UI started separately). If not running, ask the user to start it first.
 - If browser automation needs cookies + localStorage (not just the API cookie), prefer capturing Playwright `storageState` via `node scripts/auth-capture.js` and storing it under `./.auth/<appName>.json`.
@@ -45,7 +49,7 @@ Anthology is a two-tier catalogue: a Go 1.25 API (under `cmd/api` + `internal/`)
 
 ## Commit & Pull Request Guidelines
 - Keep commits short, imperative, and scoped (e.g., “Add Google OAuth login”). Reference issues in the body when helpful.
-- PRs must include a change summary, manual test notes, confirmation that both `go test` and `npm test`/`npm run lint` were run, and screenshots or GIFs for UI changes. Mention deployment/migration steps if applicable.
+- PRs must include a change summary, manual test notes, confirmation that `make api-test`, `make web-test`, and `make lint` were run, and screenshots or GIFs for UI changes. Mention deployment/migration steps if applicable.
 
 ## Deployment Notes
 - Docker images are split: API (`Docker/Dockerfile.api`) and UI (`Docker/Dockerfile.ui`). Makefile targets (`docker-build-*`, `docker-push-*`, `docker-buildx-*`) wrap builds/pushes.
