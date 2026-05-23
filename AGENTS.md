@@ -17,7 +17,9 @@ Anthology is a two-tier catalogue: a Go 1.25 API (under `cmd/api` + `internal/`)
 - `make api-lint`, `make fmt`, and `make tidy` — run `golangci-lint`, format Go sources, and tidy modules.
 - `make web-install` — install Angular deps under `web/`.
 - `make web-start` — Angular dev server on `http://localhost:4200` proxying to the API URL defined in the meta tag/runtime config.
-- `make web-test` and `make web-lint` — Jasmine/Karma suite plus ESLint.
+- `make web-test`, `make web-lint`, and `make web-lint-fix` — Vitest unit tests, lint/style/format checks, and the auto-fix variant.
+- `make web-build` — build the Angular production bundle.
+- `make auth-capture` — open a headed browser for manual login and save Playwright `storageState` under `./.auth/<appName>.json`; configure `auth.config.json` first or pass equivalent script arguments.
 - `make lint` — run both Go and Angular lint checks.
 - `make local` — convenience target to boot the API and Angular dev server together for end-to-end checks.
 - `make build` — run API tests and web tests, then build both container images.
