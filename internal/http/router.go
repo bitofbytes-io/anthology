@@ -35,6 +35,7 @@ func NewRouter(cfg config.Config, svc *items.Service, catalogSvc *catalog.Servic
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+	r.Use(newSameOriginMiddleware(cfg.AllowedOrigins))
 	r.Use(newSlogMiddleware(logger))
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {

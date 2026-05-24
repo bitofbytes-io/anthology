@@ -83,3 +83,83 @@ func TestAuthMiddlewareRejectsInvalidSession(t *testing.T) {
 		t.Fatalf("expected status 401, got %d", rec.Code)
 	}
 }
+
+func TestSameOriginMiddlewareAllowsSafeMethodsWithoutOrigin(t *testing.T) {
+	next := newSameOriginMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "http://api.example.test/api/items", nil)
+	rec := httptest.NewRecorder()
+
+	next.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", rec.Code)
+	}
+}
+
+func TestSameOriginMiddlewareRejectsUnsafeMethodWithoutOrigin(t *testing.T) {
+	next := newSameOriginMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "http://api.example.test/api/items", nil)
+	rec := httptest.NewRecorder()
+
+	next.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", rec.Code)
+	}
+}
+
+func TestSameOriginMiddlewareAllowsConfiguredFrontendOrigin(t *testing.T) {
+	next := newSameOriginMiddleware([]string{"http://localhost:4200"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "http://localhost:8080/api/items", nil)
+	req.Header.Set("Origin", "http://localhost:4200")
+	rec := httptest.NewRecorder()
+
+	next.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", rec.Code)
+	}
+}
+
+func TestSameOriginMiddlewareAllowsForwardedHTTPSOrigin(t *testing.T) {
+	next := newSameOriginMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodDelete, "http://anthology.example.test/api/session", nil)
+	req.Host = "anthology.example.test"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("Origin", "https://anthology.example.test")
+	rec := httptest.NewRecorder()
+
+	next.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", rec.Code)
+	}
+}
+
+func TestSameOriginMiddlewareRejectsCrossSiteOrigin(t *testing.T) {
+	next := newSameOriginMiddleware([]string{"http://localhost:4200"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "http://localhost:8080/api/items", nil)
+	req.Header.Set("Origin", "https://evil.example.test")
+	rec := httptest.NewRecorder()
+
+	next.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", rec.Code)
+	}
+}
