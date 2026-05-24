@@ -148,6 +148,55 @@ func TestSameOriginMiddlewareAllowsForwardedHTTPSOrigin(t *testing.T) {
 	}
 }
 
+func TestSameOriginMiddlewareAllowsRefererFallback(t *testing.T) {
+	next := newSameOriginMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "https://anthology.example.test/api/items", nil)
+	req.Header.Set("Referer", "https://anthology.example.test/items/new")
+	rec := httptest.NewRecorder()
+
+	next.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", rec.Code)
+	}
+}
+
+func TestSameOriginMiddlewareRejectsCrossSiteReferer(t *testing.T) {
+	next := newSameOriginMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "https://anthology.example.test/api/items", nil)
+	req.Header.Set("Referer", "https://evil.example.test/attack")
+	rec := httptest.NewRecorder()
+
+	next.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", rec.Code)
+	}
+}
+
+func TestSameOriginMiddlewareIgnoresInvalidForwardedProto(t *testing.T) {
+	next := newSameOriginMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "http://anthology.example.test/api/items", nil)
+	req.Header.Set("X-Forwarded-Proto", "gopher")
+	req.Header.Set("Origin", "http://anthology.example.test")
+	rec := httptest.NewRecorder()
+
+	next.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", rec.Code)
+	}
+}
+
 func TestSameOriginMiddlewareRejectsCrossSiteOrigin(t *testing.T) {
 	next := newSameOriginMiddleware([]string{"http://localhost:4200"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
