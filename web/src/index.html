@@ -7,12 +7,19 @@
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="anthology-api" content="http://localhost:8080/api" />
         <script src="/assets/runtime-config.js"></script>
-        <script
-            async
-            defer
-            data-website-id="7e41681c-1a39-4f02-bee6-038f5ac48df7"
-            src="https://anthology.bitofbytes.io/umami/script.js"
-        ></script>
+        <script>
+            (function () {
+                if (window.location.hostname !== 'anthology.bitofbytes.io') {
+                    return;
+                }
+
+                var script = document.createElement('script');
+                script.async = true;
+                script.dataset.websiteId = '7e41681c-1a39-4f02-bee6-038f5ac48df7';
+                script.src = 'https://anthology.bitofbytes.io/umami/script.js';
+                document.head.appendChild(script);
+            })();
+        </script>
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
