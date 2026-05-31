@@ -20,7 +20,7 @@ APP_ENV ?= development
 # Include local overrides if present (e.g., local.mk with real API keys)
 -include local.mk
 
-REGISTRY ?= registry.bitofbytes.io
+REGISTRY ?= registry.tail209cfc.ts.net
 IMAGE_REPO ?= anthology
 API_IMAGE_REPO ?= anthology-api
 UI_IMAGE_REPO ?= anthology-ui
