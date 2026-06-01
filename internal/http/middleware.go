@@ -28,7 +28,7 @@ func newSlogMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 			recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(recorder, r)
 			duration := time.Since(start)
-			logger.Info("http request", "method", r.Method, "path", r.URL.Path, "status", recorder.status, "duration", duration.String())
+			logger.Debug("http request", "method", r.Method, "path", r.URL.Path, "status", recorder.status, "duration", duration.String())
 		})
 	}
 }
