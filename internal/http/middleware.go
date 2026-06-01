@@ -28,7 +28,14 @@ func newSlogMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 			recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(recorder, r)
 			duration := time.Since(start)
-			logger.Info("http request", "method", r.Method, "path", r.URL.Path, "status", recorder.status, "duration", duration.String())
+			switch {
+			case recorder.status >= http.StatusInternalServerError:
+				logger.Error("http request", "method", r.Method, "path", r.URL.Path, "status", recorder.status, "duration", duration.String())
+			case recorder.status >= http.StatusBadRequest:
+				logger.Warn("http request", "method", r.Method, "path", r.URL.Path, "status", recorder.status, "duration", duration.String())
+			default:
+				logger.Debug("http request", "method", r.Method, "path", r.URL.Path, "status", recorder.status, "duration", duration.String())
+			}
 		})
 	}
 }
