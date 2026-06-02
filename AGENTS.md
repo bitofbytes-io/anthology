@@ -15,6 +15,7 @@ Anthology is a two-tier catalogue: a Go 1.25 API (under `cmd/api` + `internal/`)
 - `make api-run` (or `make run`) — boots the API using `local.mk`/current env vars; requires Postgres (`DATA_STORE=postgres` + `DATABASE_URL`) and applies Goose migrations on startup.
 - `make api-test` — Go unit tests (catalog lookups, importer, services, handlers); equivalent to `go test ./...`.
 - `make api-lint`, `make fmt`, and `make tidy` — run `golangci-lint`, format Go sources, and tidy modules.
+- `make api-build` and `make api-clean` — compile the Go API into `bin/anthology` or remove compiled Go binaries.
 - `make web-install` — install Angular deps under `web/`.
 - `make web-start` — Angular dev server on `http://localhost:4200` proxying to the API URL defined in the meta tag/runtime config.
 - `make web-test`, `make web-lint`, and `make web-lint-fix` — Vitest unit tests, lint/style/format checks, and the auto-fix variant.
@@ -23,7 +24,9 @@ Anthology is a two-tier catalogue: a Go 1.25 API (under `cmd/api` + `internal/`)
 - `make lint` — run both Go and Angular lint checks.
 - `make local` — convenience target to boot the API and Angular dev server together for end-to-end checks.
 - `make build` — run API tests and web tests, then build both container images.
+- `make docker-build`, `make docker-push`, and `make docker-publish` — build, push, or build-and-push both API/UI images with the Makefile defaults.
 - `make docker-buildx` — build and push multi-arch API/UI images; set registry/tag inputs locally or in CI.
+- `make clean` — remove local Go build artifacts.
 
 ## Coding Style & Naming Conventions
 - Go: auto-format with `gofmt`, keep imports sorted, use short receiver names, and follow package boundaries like `internal/items`. Exported types mirror the `ItemService`/`ItemRepository` style. Logging uses `slog`.
