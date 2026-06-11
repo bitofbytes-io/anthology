@@ -199,6 +199,7 @@ func (h *ItemHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logger.Info("item created", "user_id", user.ID, "item_id", item.ID, "item_type", item.ItemType)
 	writeJSON(w, http.StatusCreated, item)
 }
 
@@ -378,6 +379,7 @@ func (h *ItemHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logger.Info("item updated", "user_id", user.ID, "item_id", item.ID, "item_type", item.ItemType)
 	writeJSON(w, http.StatusOK, item)
 }
 
@@ -395,6 +397,7 @@ func (h *ItemHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logger.Info("item deleted", "user_id", user.ID, "item_id", id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -418,6 +421,7 @@ func (h *ItemHandler) Resync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logger.Info("item metadata resynced", "user_id", user.ID, "item_id", item.ID, "item_type", item.ItemType)
 	writeJSON(w, http.StatusOK, item)
 }
 
@@ -549,6 +553,13 @@ func (h *ItemHandler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logger.Info("csv import completed",
+		"user_id", user.ID,
+		"total_rows", summary.TotalRows,
+		"imported", summary.Imported,
+		"skipped_duplicates", len(summary.SkippedDuplicates),
+		"failed", len(summary.Failed),
+	)
 	writeJSON(w, http.StatusOK, summary)
 }
 
@@ -572,6 +583,7 @@ func (h *ItemHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to export items")
 		return
 	}
+	h.logger.Info("csv export started", "user_id", user.ID, "item_count", len(itemList))
 
 	// Generate filename with timestamp
 	timestamp := time.Now().UTC().Format("2006-01-02")

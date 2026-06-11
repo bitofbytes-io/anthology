@@ -70,10 +70,13 @@ func (h *SessionHandler) Status(w http.ResponseWriter, r *http.Request) {
 
 // Logout removes the session cookie and deletes the session from the database.
 func (h *SessionHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	hadSession := false
+
 	// Delete session from database if auth service is configured
 	if h.authService != nil {
 		cookie, err := r.Cookie(sessionCookieName)
 		if err == nil && cookie.Value != "" {
+			hadSession = true
 			if err := h.authService.DeleteSession(r.Context(), cookie.Value); err != nil {
 				h.logger.Error("failed to delete session", "error", err)
 			}
@@ -92,6 +95,7 @@ func (h *SessionHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Expires:  time.Unix(0, 0),
 	})
 
+	h.logger.Info("session logout", "had_session", hadSession)
 	w.WriteHeader(http.StatusNoContent)
 }
 

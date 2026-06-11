@@ -71,6 +71,7 @@ func (h *ShelfHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logger.Info("shelf created", "user_id", user.ID, "shelf_id", created.Shelf.ID)
 	writeJSON(w, http.StatusCreated, created)
 }
 
@@ -115,6 +116,7 @@ func (h *ShelfHandler) UpdateLayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logger.Info("shelf layout updated", "user_id", user.ID, "shelf_id", shelfID, "slot_count", len(updated.Slots), "displaced_count", len(displaced))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"shelf":     updated,
 		"displaced": displaced,
@@ -159,6 +161,7 @@ func (h *ShelfHandler) AssignItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logger.Info("shelf item assigned", "user_id", user.ID, "shelf_id", shelfID, "slot_id", slotID, "item_id", itemID)
 	writeJSON(w, http.StatusOK, shelf)
 }
 
@@ -188,6 +191,7 @@ func (h *ShelfHandler) RemoveItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logger.Info("shelf item removed", "user_id", user.ID, "shelf_id", shelfID, "slot_id", slotID, "item_id", itemID)
 	writeJSON(w, http.StatusOK, shelf)
 }
 
@@ -224,5 +228,6 @@ func (h *ShelfHandler) ScanAndAssign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logger.Info("shelf scan completed", "user_id", user.ID, "shelf_id", shelfID, "slot_id", slotID, "item_id", result.Item.ID, "status", result.Status)
 	writeJSON(w, http.StatusOK, result)
 }
