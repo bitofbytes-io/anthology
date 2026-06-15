@@ -58,7 +58,6 @@ func (h *SeriesHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Info("series updated", "user_id", user.ID, "items_updated", len(summary.Items))
 	writeJSON(w, http.StatusOK, summary)
 }
 
@@ -100,6 +99,7 @@ func (h *SeriesHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logger.Info("series updated", "user_id", user.ID, "items_updated", len(summary.Items))
 	writeJSON(w, http.StatusOK, summary)
 }
 

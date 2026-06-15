@@ -583,7 +583,7 @@ func (h *ItemHandler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to export items")
 		return
 	}
-	h.logger.Info("csv export started", "user_id", user.ID, "item_count", len(itemList))
+	h.logger.Info("csv export completed", "user_id", user.ID, "item_count", len(itemList))
 
 	// Generate filename with timestamp
 	timestamp := time.Now().UTC().Format("2006-01-02")
