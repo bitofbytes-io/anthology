@@ -58,6 +58,7 @@ func newAuthMiddleware(authService *auth.Service, logger *slog.Logger) func(http
 			// Check session cookie
 			cookie, err := r.Cookie(sessionCookieName)
 			if err != nil || cookie.Value == "" {
+				logger.Info("authentication required", "path", r.URL.Path)
 				unauthorized(w)
 				return
 			}
@@ -71,6 +72,7 @@ func newAuthMiddleware(authService *auth.Service, logger *slog.Logger) func(http
 			}
 
 			if user == nil {
+				logger.Info("authentication failed", "reason", "invalid_session", "path", r.URL.Path)
 				unauthorized(w)
 				return
 			}

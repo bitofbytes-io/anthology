@@ -119,6 +119,7 @@ func (h *OAuthHandler) InitiateGoogle(w http.ResponseWriter, r *http.Request) {
 	fullState := base64.RawURLEncoding.EncodeToString(stateJSON)
 
 	authURL := h.google.AuthURL(fullState)
+	h.logger.Info("oauth login started", "redirect_to", payload.RedirectTo)
 	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
 }
 
@@ -183,6 +184,7 @@ func (h *OAuthHandler) CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 	// Exchange code for tokens
 	code := r.URL.Query().Get("code")
 	if code == "" {
+		h.logger.Warn("oauth callback: missing authorization code")
 		h.redirectWithError(w, r, "invalid_request", "Missing authorization code.")
 		return
 	}
@@ -235,7 +237,7 @@ func (h *OAuthHandler) CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   int(sessionCookieTTL.Seconds()),
 	})
 
-	h.logger.Info("oauth login successful", "user_id", user.ID, "email", user.Email)
+	h.logger.Info("oauth login successful", "user_id", user.ID, "redirect_to", redirectTo)
 
 	// Redirect to frontend
 	http.Redirect(w, r, h.frontendURL+redirectTo, http.StatusTemporaryRedirect)

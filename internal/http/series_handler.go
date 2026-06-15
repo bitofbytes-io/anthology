@@ -99,6 +99,7 @@ func (h *SeriesHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logger.Info("series updated", "user_id", user.ID, "items_updated", len(summary.Items))
 	writeJSON(w, http.StatusOK, summary)
 }
 
@@ -126,6 +127,7 @@ func (h *SeriesHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logger.Info("series deleted", "user_id", user.ID, "items_updated", count)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"itemsUpdated": count,
 	})
