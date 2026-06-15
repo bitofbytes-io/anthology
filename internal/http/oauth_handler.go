@@ -237,7 +237,7 @@ func (h *OAuthHandler) CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   int(sessionCookieTTL.Seconds()),
 	})
 
-	h.logger.Info("oauth login successful", "user_id", user.ID, "email", user.Email, "redirect_to", redirectTo)
+	h.logger.Info("oauth login successful", "user_id", user.ID, "redirect_to", redirectTo)
 
 	// Redirect to frontend
 	http.Redirect(w, r, h.frontendURL+redirectTo, http.StatusTemporaryRedirect)
