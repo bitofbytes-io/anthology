@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Stack overview
-Anthology is a two-tier catalogue: a Go 1.26.3 API (under `cmd/api` + `internal/`) fronted by an Angular 21 Material UI (`web/`). Recent work adds metadata search (Google Books), CSV imports, and cover thumbnails that all flow through the Add Item page so validation and enrichment behave consistently. A new shelves module models real-world shelves with photo-backed layouts so items can be placed into slots and surfaced in the UI.
+Anthology is a two-tier catalogue: a Go 1.26.4 API (under `cmd/api` + `internal/`) fronted by an Angular 21 Material UI (`web/`). Recent work adds metadata search (Google Books), CSV imports, and cover thumbnails that all flow through the Add Item page so validation and enrichment behave consistently. A new shelves module models real-world shelves with photo-backed layouts so items can be placed into slots and surfaced in the UI.
 
 ## Project Structure & Module Organization
 - `cmd/api`: Go entrypoint; wire up config, repositories, chi router, middleware, and HTTP handlers.
@@ -58,6 +58,7 @@ Anthology is a two-tier catalogue: a Go 1.26.3 API (under `cmd/api` + `internal/
 
 ## Deployment Notes
 - Docker images are split: API (`Docker/Dockerfile.api`) and UI (`Docker/Dockerfile.ui`). Makefile targets (`docker-build-*`, `docker-push-*`, `docker-buildx-*`) wrap builds/pushes.
+- The UI container's `Docker/ui/nginx.conf` intentionally serves the SPA shell only for allowlisted Angular routes and returns 404 for unknown direct paths; keep that allowlist in sync with `web/src/app/app.routes.ts`.
 - UI container rewrites `assets/runtime-config.js` from `NG_APP_API_URL` at startup so you can repoint environments without rebuilding Angular assets.
 - Apply Goose migrations before booting the Postgres-backed API (or let the API run them on startup), and ensure services load secrets through env vars or Swarm/Stack secret mounts.
 
