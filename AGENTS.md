@@ -58,7 +58,7 @@ Anthology is a two-tier catalogue: a Go 1.26.4 API (under `cmd/api` + `internal/
 
 ## Deployment Notes
 - Docker images are split: API (`Docker/Dockerfile.api`) and UI (`Docker/Dockerfile.ui`). Makefile targets (`docker-build-*`, `docker-push-*`, `docker-buildx-*`) wrap builds/pushes.
-- The UI container's `Docker/ui/nginx.conf` intentionally serves the SPA shell only for allowlisted Angular routes and returns 404 for unknown direct paths; keep that allowlist in sync with `web/src/app/app.routes.ts`.
+- The UI container's `Docker/ui/nginx.conf` intentionally serves the SPA shell only for allowlisted direct paths, plus explicit redirects and path aliases such as `/items`, then returns 404 for unknown paths; when changing routes, compare it with `web/src/app/app.routes.ts` and verify any extra nginx entries are deliberate.
 - UI container rewrites `assets/runtime-config.js` from `NG_APP_API_URL` at startup so you can repoint environments without rebuilding Angular assets.
 - Apply Goose migrations before booting the Postgres-backed API (or let the API run them on startup), and ensure services load secrets through env vars or Swarm/Stack secret mounts.
 
