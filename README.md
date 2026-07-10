@@ -75,6 +75,8 @@ docker run -d --name db --network anthology \
   -v anthology-postgres:/var/lib/postgresql/data \
   postgres:17
 
+until docker exec db pg_isready -U anthology -d anthology >/dev/null 2>&1; do sleep 1; done
+
 docker run -d --name anthology-api --network anthology \
   --env-file anthology.env \
   -p 8080:8080 \
