@@ -1,76 +1,8 @@
-# Repository Guidelines
+# Agent Guidance
 
-## Stack overview
-Anthology is a two-tier catalogue: a Go 1.26.4 API (under `cmd/api` + `internal/`) fronted by an Angular 21 Material UI (`web/`). Recent work adds metadata search (Google Books), CSV imports, and cover thumbnails that all flow through the Add Item page so validation and enrichment behave consistently. A new shelves module models real-world shelves with photo-backed layouts so items can be placed into slots and surfaced in the UI.
-
-## Project Structure & Module Organization
-- `cmd/api`: Go entrypoint; wire up config, repositories, chi router, middleware, and HTTP handlers.
-- `internal/`: shared Go packages (domain logic, importer, catalog lookups, services, transport, config). Shelf layout + placement logic now lives in `internal/shelves`.
-- `migrations/`: Postgres DDL managed by Goose. `0001_baseline.sql` captures the current schema.
-- `web/`: Angular workspace (feature modules under `web/src/app`, Material theme in `web/src/styles.scss`, runtime config in `web/src/assets/runtime-config.js`). Shelf management views live under `web/src/app/pages/shelves`.
-- `Docker/`: split Dockerfiles (`Dockerfile.api`, `Dockerfile.ui`) for the independently deployable API/UI containers.
-- `docs/architecture/` & `docs/planning/`: architecture diagrams, startup flows, Material guidelines, and roadmap notes.
-
-## Build, Test, and Development Commands
-- `make api-run` (or `make run`) — boots the API using `local.mk`/current env vars; requires Postgres (`DATA_STORE=postgres` + `DATABASE_URL`) and applies Goose migrations on startup.
-- `make api-test` — Go unit tests (catalog lookups, importer, services, handlers); equivalent to `go test ./...`.
-- `make api-lint`, `make fmt`, and `make tidy` — run `golangci-lint`, format Go sources, and tidy modules.
-- `make api-build` and `make api-clean` — compile the Go API into `bin/anthology` or remove compiled Go binaries.
-- `make web-install` — install Angular deps under `web/`.
-- `make web-start` — Angular dev server on `http://localhost:4200` proxying to the API URL defined in the meta tag/runtime config.
-- `make web-test`, `make web-lint`, and `make web-lint-fix` — Vitest unit tests, lint/style/format checks, and the auto-fix variant.
-- `make web-build` — build the Angular production bundle.
-- `make auth-capture` — open a headed browser for manual login and save Playwright `storageState` under `./.auth/<appName>.json`; configure `auth.config.json` first or pass equivalent script arguments.
-- `make lint` — run both Go and Angular lint checks.
-- `make local` — convenience target to boot the API and Angular dev server together for end-to-end checks.
-- `make build` — run API tests and web tests, then build both container images.
-- `make docker-build`, `make docker-push`, and `make docker-publish` — build, push, or build-and-push both API/UI images with the Makefile defaults.
-- `make docker-buildx` — build and push multi-arch API/UI images; set registry/tag inputs locally or in CI.
-- `make clean` — remove local Go build artifacts.
-
-## Coding Style & Naming Conventions
-- Go: auto-format with `gofmt`, keep imports sorted, use short receiver names, and follow package boundaries like `internal/items`. Exported types mirror the `ItemService`/`ItemRepository` style. Logging uses `slog`.
-- Angular: 2-space indentation, kebab-case filenames (`items-page.component.ts`), standalone components, and SCSS scoped per component. Stick to Material 3 tokens defined in `styles.scss`. Keep environment variables in screaming snake case (e.g., `GOOGLE_BOOKS_API_KEY`).
-
-## Configuration & Security
-- Primary env vars: `DATA_STORE`, `DATABASE_URL`, `PORT`, `LOG_LEVEL`, `ALLOWED_ORIGINS`, `APP_ENV`, `GOOGLE_BOOKS_API_KEY`, `AUTH_GOOGLE_CLIENT_ID`, `AUTH_GOOGLE_CLIENT_SECRET`, `AUTH_GOOGLE_REDIRECT_URL`, `AUTH_GOOGLE_ALLOWED_DOMAINS`, `AUTH_GOOGLE_ALLOWED_EMAILS`, `FRONTEND_URL`. `_FILE` variants are respected (defaults point to `/run/secrets/anthology_*`, including `anthology_google_books_api_key`, `anthology_google_client_id`, and `anthology_google_client_secret`). `GOOGLE_BOOKS_API_KEY` is required even in local/dev; set a placeholder when testing.
-- The in-memory store has been removed; `DATA_STORE=postgres` is required and expects Goose migrations to be applied (uses the `sqlx` repo implementation).
-- CORS defaults allow `http://localhost:4200`/`8080`; override via `ALLOWED_ORIGINS`.
-- OAuth is required in all environments (configure Google OAuth client ID/secret plus an allowlist) and relies on Postgres for sessions.
-- Never commit secrets; rely on `.env` files locally. Docker secrets include `anthology_database_url`, `anthology_google_books_api_key`, `anthology_google_client_id`, and `anthology_google_client_secret`, which map to the `_FILE` envs.
-
-## Feature behavior notes
-- Reading status supports `none`/`want_to_read`/`reading`/`read`; defaults to `none`. Filtering by `status` with no type filter applies only to books (non-books remain visible when status = `none`, and are excluded for the other statuses). `read` requires `readAt`; `reading` enforces non-negative `currentPage` capped by `pageCount` when provided.
-- Shelf APIs (`/api/shelves`) expose list/create/get, layout updates, and slot assignment/removal. Layout updates return displaced items; item placements update the cached `shelfPlacement` on items for list/grid views.
-
-## Testing & Validation Guidelines
-- Backend tests live next to their code (`*_test.go`); cover validation, repository behaviour, importer edge cases, catalog lookups, shelf layout validation, and displacement/placement flows.
-- Frontend specs (`*.spec.ts`) mirror component paths, covering search flow, manual entry, CSV imports, and UI copy.
-- Run `make api-test`, `make web-test`, and `make lint` before every PR. Hook `githooks/pre-commit` into `.git/hooks` to enforce `golangci-lint run ./...` plus `npm run lint` unless `SKIP_PRECOMMIT_LINT=1` is set.
-- Validate UI work in the running Angular app when feasible: use Playwright automation by default for navigation/capture, grab at least one screenshot (include scrolled states if relevant) from `http://localhost:4200`, and log any console or network errors.
-- Before running Playwright/browser verification, confirm with the user that the local server is running (`make local`, or API/UI started separately). If not running, ask the user to start it first.
-- If browser automation needs cookies + localStorage (not just the API cookie), prefer capturing Playwright `storageState` via `node scripts/auth-capture.js` and storing it under `./.auth/<appName>.json`.
-  - If the state file is missing/expired, ask the user to run `make auth-capture` (or `node scripts/auth-capture.js`) after logging in manually.
-
-## Commit & Pull Request Guidelines
-- Keep commits short, imperative, and scoped (e.g., “Add Google OAuth login”). Reference issues in the body when helpful.
-- PRs must include a change summary, manual test notes, confirmation that `make api-test`, `make web-test`, and `make lint` were run, and screenshots or GIFs for UI changes. Mention deployment/migration steps if applicable.
-
-## Deployment Notes
-- Docker images are split: API (`Docker/Dockerfile.api`) and UI (`Docker/Dockerfile.ui`). Makefile targets (`docker-build-*`, `docker-push-*`, `docker-buildx-*`) wrap builds/pushes.
-- The UI container's `Docker/ui/nginx.conf` intentionally serves the SPA shell only for allowlisted direct paths, plus explicit redirects and path aliases such as `/items`, then returns 404 for unknown paths; when changing routes, compare it with `web/src/app/app.routes.ts` and verify any extra nginx entries are deliberate.
-- UI container rewrites `assets/runtime-config.js` from `NG_APP_API_URL` at startup so you can repoint environments without rebuilding Angular assets.
-- Apply Goose migrations before booting the Postgres-backed API (or let the API run them on startup), and ensure services load secrets through env vars or Swarm/Stack secret mounts.
-
-## Local Auth
-Local dev runs without auth unless OAuth is configured. To exercise OAuth locally, use Postgres plus the Google OAuth env vars and keep `APP_ENV=development` so cookies stay non-secure.
-- For local agent/browser verification, do not add auth bypass routes. Reuse a saved Playwright `storageState` captured after manual login:
-  - Capture/refresh: `make auth-capture`
-  - Saved state lives in `./.auth/<appName>.json` (gitignored, treat as secret)
-
-## Workspace Bootstrap
-- If `local.mk` is missing in a new workspace/worktree, place a `local.mk` file in the project root before running `make run` or `make local`.
-- Create `local.mk` by either:
-  - copying `local.mk.example`, or
-  - copying `local.mk` from the primary Anthology repo/workspace.
-- If the source `local.mk` location is unclear in a new worktree, ask the user where to copy it from.
+- Treat `web/src/assets/runtime-config.js` as runtime configuration: the UI container rewrites it from `NG_APP_API_URL` without rebuilding the Angular bundle.
+- Keep API and UI deployment concerns separate; the project intentionally publishes two images.
+- Do not add authentication bypass routes. For browser verification, reuse manually captured Playwright state under the ignored `.auth/` directory and never commit it.
+- Update source files rather than generated Angular build output under `web/dist/`.
+- Run both Go and Angular tests for cross-tier changes. UI changes should also pass lint and receive browser verification when the application is available.
+- Preserve the startup migration path: the API applies embedded Goose migrations before serving requests.

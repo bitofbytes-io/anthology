@@ -1,6 +1,7 @@
 bin/
 *.log
 coverage.out
+anthology.env
 
 web/node_modules/
 web/dist/
