@@ -32,6 +32,7 @@ docker build -f Docker/Dockerfile.ui -t anthology-ui:local .
 Create an untracked `anthology.env` file:
 
 ```dotenv
+# Use production when serving the application over HTTPS.
 APP_ENV=development
 DATABASE_URL=postgres://anthology:change-me@db:5432/anthology?sslmode=disable
 GOOGLE_BOOKS_API_KEY=replace-with-your-api-key
