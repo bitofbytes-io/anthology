@@ -4,7 +4,7 @@
 - Keep API and UI deployment concerns separate; the project intentionally publishes two images.
 - Do not add authentication bypass routes. For browser verification, reuse manually captured Playwright state under the ignored `.auth/` directory and never commit it.
 - Update source files rather than generated Angular build output under `web/dist/`.
-- Run `make web-install` before the first frontend build; use `make api-run` and `make web-start` when the API and Angular dev server need to run separately.
+- Run `make web-install` before the first frontend build; after configuring the ignored `local.mk`, use `make api-run` and `make web-start` when the API and Angular dev server need to run separately.
 - Use `make local` to run the API and Angular dev server together after configuring ignored local settings.
 - Use `make api-test`, `make web-test`, and `make lint` for validation; UI changes should also receive browser verification when the application is available.
 - Capture browser auth state with `make auth-capture` only into the ignored `.auth/` directory.
