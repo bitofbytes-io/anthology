@@ -37,11 +37,12 @@ func NewRouter(cfg config.Config, svc *items.Service, catalogSvc *catalog.Servic
 	r.Use(newSameOriginMiddleware(cfg.AllowedOrigins))
 	r.Use(newSlogMiddleware(logger))
 
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+	healthHandler := func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status": "ok",
 		})
-	})
+	}
+	r.Get("/health", healthHandler)
 
 	sessionHandler := NewSessionHandler(authService, cfg.Environment, logger)
 	bulkImporter := importer.NewCSVImporter(svc, catalogSvc)
@@ -51,6 +52,8 @@ func NewRouter(cfg config.Config, svc *items.Service, catalogSvc *catalog.Servic
 	seriesHandler := NewSeriesHandler(svc, logger)
 
 	r.Route("/api", func(r chi.Router) {
+		r.Get("/health", healthHandler)
+
 		// OAuth routes (unauthenticated)
 		if googleAuth != nil {
 			oauthHandler := NewOAuthHandler(googleAuth, authService, cfg.FrontendURL, cfg.Environment, logger)

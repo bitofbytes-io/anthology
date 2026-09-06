@@ -89,7 +89,7 @@ docker run -d --name anthology-ui --network anthology \
   anthology-ui:local
 ```
 
-Open <http://localhost:4200>. The API applies embedded Goose migrations automatically during startup. Its public health check is available at <http://localhost:8080/health>.
+Open <http://localhost:4200>. The API applies embedded Goose migrations automatically during startup. Its public health checks are available at <http://localhost:8080/health> and <http://localhost:8080/api/health>.
 
 For production, use HTTPS, set `APP_ENV=production`, use a strong database password, restrict the Google API key, and provide secrets through your platform's secret manager.
 
