@@ -177,4 +177,30 @@ describe('Shelf layout removal confirmation', () => {
             ]);
         });
     }
+    it('shows displaced books and a library link after the final slot is removed', () => {
+        const fixture = TestBed.createComponent(ShelfDetailPageComponent);
+        const page = fixture.componentInstance;
+        const original = layout();
+        page.shelf.set(original);
+        page.resetLayoutForm();
+        page.removeRow(2);
+        page.removeRow(1);
+        page.removeRow(0);
+        service.updateLayout.mockReturnValue(
+            of({
+                shelf: { ...original, rows: [], slots: [], placements: [], unplaced: [] },
+                displaced: original.placements,
+            }),
+        );
+        page.saveLayout();
+        decision.next('confirm');
+        fixture.detectChanges();
+        const feedback: HTMLElement = fixture.nativeElement.querySelector('[role="status"]');
+        expect(page.selectedSlot()).toBeNull();
+        expect(feedback.textContent).toContain('The layout was saved.');
+        expect(feedback.textContent).toContain('Book 0');
+        expect(feedback.textContent).toContain('Book 1');
+        expect(feedback.querySelector('a')?.getAttribute('href')).toBe('/');
+        expect(fixture.nativeElement.querySelector('app-slot-sidebar')).toBeNull();
+    });
 });

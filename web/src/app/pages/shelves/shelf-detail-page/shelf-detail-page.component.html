@@ -32,6 +32,21 @@
         @if (loading()) {
             <mat-progress-bar mode="indeterminate"></mat-progress-bar>
         }
+        @if (mode() === 'view' && !selectedSlot() && displaced().length > 0) {
+            <mat-card class="removed-books" role="status" aria-live="polite">
+                <h2>Books removed from this shelf</h2>
+                <p>
+                    The layout was saved. These books remain in your library without a shelf
+                    assignment.
+                </p>
+                <ul>
+                    @for (placement of displaced(); track placement.item.id) {
+                        <li>{{ placement.item.title }}</li>
+                    }
+                </ul>
+                <a mat-stroked-button routerLink="/">Open library</a>
+            </mat-card>
+        }
         <div class="content" [class.content--single]="mode() === 'edit'">
             <mat-card class="canvas" [ngClass]="{ 'canvas--editing': mode() === 'edit' }">
                 <app-shelf-canvas

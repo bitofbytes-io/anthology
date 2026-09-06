@@ -437,17 +437,7 @@ func (s *Service) DeleteSeries(ctx context.Context, seriesName string, ownerID u
 
 // enrichSeriesSummary calculates missing volumes and status for a series.
 func (s *Service) enrichSeriesSummary(summary SeriesSummary) SeriesSummary {
-	summary.MissingVolumes = s.detectMissingVolumes(summary)
-	if summary.MissingVolumes != nil {
-		count := len(summary.MissingVolumes)
-		summary.MissingCount = &count
-	} else if summary.TotalVolumes != nil {
-		count := *summary.TotalVolumes - summary.OwnedCount
-		if count < 0 {
-			count = 0
-		}
-		summary.MissingCount = &count
-	}
+	summary.MissingVolumes, summary.MissingCount = s.detectMissingVolumes(summary)
 	summary.Status = s.determineSeriesStatus(summary)
 
 	return summary
@@ -455,43 +445,51 @@ func (s *Service) enrichSeriesSummary(summary SeriesSummary) SeriesSummary {
 
 const maxSeriesVolumes = 200
 
-// detectMissingVolumes identifies gaps using the declared total or owned volumes.
-func (s *Service) detectMissingVolumes(summary SeriesSummary) []int {
-	ownedVolumes := make(map[int]bool)
-	maxOwned := 0
-
+// detectMissingVolumes returns an exact count and at most 200 missing volume numbers.
+// Work depends on the owned items and output limit, never the highest volume number.
+func (s *Service) detectMissingVolumes(summary SeriesSummary) ([]int, *int) {
+	ownedSet := make(map[int]struct{})
+	upperBound := 0
 	for _, item := range summary.Items {
-		if item.VolumeNumber != nil {
-			ownedVolumes[*item.VolumeNumber] = true
-			if *item.VolumeNumber > maxOwned {
-				maxOwned = *item.VolumeNumber
-			}
+		if item.VolumeNumber != nil && *item.VolumeNumber > 0 {
+			ownedSet[*item.VolumeNumber] = struct{}{}
+			upperBound = max(upperBound, *item.VolumeNumber)
 		}
 	}
-
-	// If no volumes have numbers, we can't detect missing
-	if maxOwned == 0 {
-		return nil
+	if len(ownedSet) == 0 {
+		// Preserve count-based estimates when no volume numbers are available.
+		if summary.TotalVolumes == nil {
+			return nil, nil
+		}
+		count := max(0, *summary.TotalVolumes-summary.OwnedCount)
+		return nil, &count
 	}
-
-	// Determine upper bound
-	upperBound := maxOwned
-	if summary.TotalVolumes != nil && *summary.TotalVolumes > upperBound {
-		upperBound = *summary.TotalVolumes
+	if summary.TotalVolumes != nil {
+		upperBound = max(upperBound, *summary.TotalVolumes)
 	}
-
-	// Bound work even when legacy records contain oversized volume values.
-	upperBound = min(upperBound, maxSeriesVolumes)
-
-	// Find gaps from 1 to upper bound
-	missing := make([]int, 0)
-	for vol := 1; vol <= upperBound; vol++ {
-		if !ownedVolumes[vol] {
-			missing = append(missing, vol)
+	count := upperBound - len(ownedSet)
+	owned := make([]int, 0, len(ownedSet))
+	for volume := range ownedSet {
+		owned = append(owned, volume)
+	}
+	slices.Sort(owned)
+	missing := make([]int, 0, min(count, maxSeriesVolumes))
+	appendGap := func(first, last int) {
+		length := min(last-first+1, maxSeriesVolumes-len(missing))
+		for offset := 0; offset < length; offset++ {
+			missing = append(missing, first+offset)
 		}
 	}
-
-	return missing
+	next := 1
+	for _, volume := range owned {
+		appendGap(next, volume-1)
+		if len(missing) == maxSeriesVolumes || volume == upperBound {
+			return missing, &count
+		}
+		next = volume + 1
+	}
+	appendGap(next, upperBound)
+	return missing, &count
 }
 
 // determineSeriesStatus calculates the completion status of a series.
@@ -505,7 +503,7 @@ func (s *Service) determineSeriesStatus(summary SeriesSummary) SeriesStatus {
 	}
 
 	// Total is unknown
-	if len(summary.MissingVolumes) > 0 {
+	if summary.MissingCount != nil && *summary.MissingCount > 0 {
 		// We found gaps via heuristic - incomplete but inferred
 		return SeriesStatusIncomplete
 	}
