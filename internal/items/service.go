@@ -453,9 +453,9 @@ func (s *Service) enrichSeriesSummary(summary SeriesSummary) SeriesSummary {
 	return summary
 }
 
-// detectMissingVolumes identifies gaps in a series using:
-// 1. User-defined total_volumes if available
-// 2. Heuristic inference from gaps in owned volumes
+const maxSeriesVolumes = 200
+
+// detectMissingVolumes identifies gaps using the declared total or owned volumes.
 func (s *Service) detectMissingVolumes(summary SeriesSummary) []int {
 	ownedVolumes := make(map[int]bool)
 	maxOwned := 0
@@ -479,6 +479,9 @@ func (s *Service) detectMissingVolumes(summary SeriesSummary) []int {
 	if summary.TotalVolumes != nil && *summary.TotalVolumes > upperBound {
 		upperBound = *summary.TotalVolumes
 	}
+
+	// Bound work even when legacy records contain oversized volume values.
+	upperBound = min(upperBound, maxSeriesVolumes)
 
 	// Find gaps from 1 to upper bound
 	missing := make([]int, 0)
@@ -788,6 +791,13 @@ func normalizeGameFields(itemType ItemType, platform, ageGroup, playerCount stri
 func normalizeSeriesFields(itemType ItemType, seriesName string, volumeNumber *int, totalVolumes *int) (string, *int, *int, error) {
 	if itemType != ItemTypeBook {
 		return "", nil, nil, nil
+	}
+
+	if volumeNumber != nil && *volumeNumber > maxSeriesVolumes {
+		return "", nil, nil, validationErr("volumeNumber cannot exceed 200")
+	}
+	if totalVolumes != nil && *totalVolumes > maxSeriesVolumes {
+		return "", nil, nil, validationErr("totalVolumes cannot exceed 200")
 	}
 
 	name := strings.TrimSpace(seriesName)

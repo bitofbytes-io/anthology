@@ -234,7 +234,13 @@
 
                 <mat-form-field appearance="fill">
                     <mat-label>Volume number</mat-label>
-                    <input matInput formControlName="volumeNumber" type="number" min="1" />
+                    <input
+                        matInput
+                        formControlName="volumeNumber"
+                        type="number"
+                        min="1"
+                        max="200"
+                    />
                     @if (form.get('volumeNumber')?.value) {
                         <button
                             mat-icon-button
@@ -247,6 +253,9 @@
                         </button>
                     }
                     <mat-hint>This book's position in the series.</mat-hint>
+                    @if (form.get('volumeNumber')?.hasError('max')) {
+                        <mat-error> Volume number cannot exceed 200. </mat-error>
+                    }
                     @if (form.get('volumeNumber')?.hasError('min')) {
                         <mat-error> Volume number must be at least 1. </mat-error>
                     }
@@ -257,7 +266,13 @@
 
                 <mat-form-field appearance="fill">
                     <mat-label>Total volumes</mat-label>
-                    <input matInput formControlName="totalVolumes" type="number" min="1" />
+                    <input
+                        matInput
+                        formControlName="totalVolumes"
+                        type="number"
+                        min="1"
+                        max="200"
+                    />
                     @if (form.get('totalVolumes')?.value) {
                         <button
                             mat-icon-button
@@ -270,6 +285,9 @@
                         </button>
                     }
                     <mat-hint>Total number of volumes in the series.</mat-hint>
+                    @if (form.get('totalVolumes')?.hasError('max')) {
+                        <mat-error> Total volumes cannot exceed 200. </mat-error>
+                    }
                     @if (form.get('totalVolumes')?.hasError('min')) {
                         <mat-error> Total volumes must be at least 1. </mat-error>
                     }

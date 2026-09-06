@@ -8,6 +8,12 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { finalize } from 'rxjs';
+import { MatDialog } from '@angular/material/dialog';
+import {
+    ConfirmDeleteDialogComponent,
+    ConfirmDeleteDialogData,
+    ConfirmDeleteDialogResult,
+} from '../../../components/confirm-delete-dialog/confirm-delete-dialog.component';
 
 import {
     LayoutSlotInput,
@@ -68,6 +74,8 @@ export class ShelfDetailPageComponent {
     private static readonly SCAN_DEBOUNCE_MS = 3000;
 
     private readonly route = inject(ActivatedRoute);
+    private readonly dialog = inject(MatDialog);
+    private confirmingLayout = false;
     private readonly shelfService = inject(ShelfService);
     private readonly notification = inject(NotificationService);
     private readonly fb = inject(FormBuilder);
@@ -333,13 +341,14 @@ export class ShelfDetailPageComponent {
 
     saveLayout(): void {
         const shelf = this.shelf();
-        if (!shelf) {
+        if (!shelf || this.savingLayout() || this.confirmingLayout) {
             return;
         }
         const slots: LayoutSlotInput[] = [];
         this.rows.controls.forEach((row) => {
             row.controls.columns.controls.forEach((col) => {
                 slots.push({
+                    newSlot: col.controls.slotId.value ? undefined : true,
                     slotId: col.controls.slotId.value ?? undefined,
                     rowIndex: row.controls.rowIndex.value,
                     colIndex: col.controls.colIndex.value,
@@ -351,13 +360,58 @@ export class ShelfDetailPageComponent {
             });
         });
 
+        const retained = new Set(slots.map((slot) => slot.slotId));
+        const affected = new Set(
+            shelf.placements
+                .filter(
+                    ({ placement }) =>
+                        placement.shelfSlotId && !retained.has(placement.shelfSlotId),
+                )
+                .map(({ item }) => item.id),
+        );
+        if (affected.size > 0) {
+            this.confirmingLayout = true;
+            this.dialog
+                .open<
+                    ConfirmDeleteDialogComponent,
+                    ConfirmDeleteDialogData,
+                    ConfirmDeleteDialogResult
+                >(ConfirmDeleteDialogComponent, {
+                    width: '400px',
+                    data: {
+                        title: 'Remove books from shelf?',
+                        message: `This will remove ${affected.size} ${affected.size === 1 ? 'book' : 'books'} from this shelf. They will remain in your library.`,
+                        itemCount: affected.size,
+                        confirmLabel: 'Save layout',
+                    },
+                })
+                .afterClosed()
+                .pipe(takeUntilDestroyed(this.destroyRef))
+                .subscribe((result) => {
+                    this.confirmingLayout = false;
+                    if (result === 'confirm' && this.shelf()?.shelf.id === shelf.shelf.id) {
+                        this.persistLayout(shelf.shelf.id, slots);
+                    }
+                });
+            return;
+        }
+        this.persistLayout(shelf.shelf.id, slots);
+    }
+
+    private persistLayout(shelfID: string, slots: LayoutSlotInput[]): void {
         this.savingLayout.set(true);
         this.shelfService
-            .updateLayout(shelf.shelf.id, slots)
+            .updateLayout(shelfID, slots)
             .pipe(takeUntilDestroyed(this.destroyRef))
             .subscribe({
                 next: (response) => {
                     this.shelf.set(response.shelf);
+                    const selectedId = this.selectedSlot()?.id;
+                    this.selectedSlot.set(
+                        response.shelf.slots.find((slot) => slot.id === selectedId) ??
+                            response.shelf.slots[0] ??
+                            null,
+                    );
                     this.displaced.set(response.displaced ?? []);
                     this.savingLayout.set(false);
                     this.mode.set('view');

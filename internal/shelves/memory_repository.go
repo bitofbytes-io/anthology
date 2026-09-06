@@ -121,9 +121,7 @@ func (m *inMemoryRepository) SaveLayout(ctx context.Context, shelfID uuid.UUID, 
 		for itemID, placement := range m.placements[shelfID] {
 			if placement.ShelfSlotID != nil {
 				if _, removed := removedSet[*placement.ShelfSlotID]; removed {
-					placement.ShelfSlotID = nil
-					placement.CreatedAt = time.Now().UTC()
-					m.placements[shelfID][itemID] = placement
+					delete(m.placements[shelfID], itemID)
 				}
 			}
 		}

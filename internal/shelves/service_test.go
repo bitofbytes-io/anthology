@@ -132,20 +132,12 @@ func TestUpdateLayoutReturnsOnlyDisplacedItems(t *testing.T) {
 		t.Fatalf("expected displaced item %s, got %s", displacedItem.ID, displaced[0].Item.ID)
 	}
 
-	if len(updated.Unplaced) != 2 {
-		t.Fatalf("expected two unplaced items, got %d", len(updated.Unplaced))
+	if len(updated.Unplaced) != 1 || updated.Unplaced[0].Item.ID != preexistingUnplaced.ID {
+		t.Fatal("only the preexisting unplaced item should remain on the shelf")
 	}
-	var foundDisplaced, foundExisting bool
-	for _, placement := range updated.Unplaced {
-		switch placement.Item.ID {
-		case displacedItem.ID:
-			foundDisplaced = true
-		case preexistingUnplaced.ID:
-			foundExisting = true
-		}
-	}
-	if !foundDisplaced || !foundExisting {
-		t.Fatalf("expected displaced and existing unplaced items to remain in unplaced pool")
+	item, err := itemsRepo.Get(ctx, displacedItem.ID, testOwnerID)
+	if err != nil || item.ShelfPlacement != nil {
+		t.Fatalf("displaced book should remain in library without cached placement: %+v, %v", item, err)
 	}
 }
 

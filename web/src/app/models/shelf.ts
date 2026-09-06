@@ -68,6 +68,7 @@ export interface ShelfSummary {
 }
 
 export interface LayoutSlotInput {
+    newSlot?: boolean;
     slotId?: string;
     rowIndex: number;
     colIndex: number;
