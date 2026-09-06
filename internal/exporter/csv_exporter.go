@@ -57,7 +57,6 @@ func NewCSVExporter() *CSVExporter {
 // The export format is designed to be compatible with the CSV import feature.
 func (e *CSVExporter) Export(w io.Writer, itemList []items.Item) error {
 	writer := csv.NewWriter(w)
-	defer writer.Flush()
 
 	// Write header row
 	if err := writer.Write(csvColumns); err != nil {
@@ -72,6 +71,7 @@ func (e *CSVExporter) Export(w io.Writer, itemList []items.Item) error {
 		}
 	}
 
+	writer.Flush()
 	return writer.Error()
 }
 
