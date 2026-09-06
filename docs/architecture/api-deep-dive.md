@@ -57,11 +57,11 @@ OAuth sessions are stored in Postgres; Postgres is required for all deployments.
 
 ## Endpoints (current)
 
-Base URL: `http://<host>:<port>`. `/api/*` endpoints require the session cookie; `/health` remains public.
+Base URL: `http://<host>:<port>`. Application endpoints under `/api/*` require the session cookie; `/health` and `/api/health` remain public.
 
 | Method | Path | Description | Handler |
 | --- | --- | --- | --- |
-| GET | `/health` | Liveness; returns `{status, environment}`. | inline in router |
+| GET | `/health`, `/api/health` | Liveness; returns `{"status":"ok"}`. | inline in router |
 | GET | `/api/auth/google` | Initiate Google OAuth. | `OAuthHandler.InitiateGoogle` |
 | GET | `/api/auth/google/callback` | Handle OAuth callback, set session. | `OAuthHandler.CallbackGoogle` |
 | GET | `/api/session` | Report session status and user (if authenticated). | `SessionHandler.Status` |
@@ -274,5 +274,5 @@ export GOOGLE_BOOKS_API_KEY="your-key"
 go run ./cmd/api
 ```
 
-Health: `curl http://localhost:8080/health`  
+Health: `curl http://localhost:8080/health` or `curl http://localhost:8080/api/health`
 List items (dev without OAuth): `curl http://localhost:8080/api/items`
