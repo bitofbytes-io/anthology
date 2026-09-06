@@ -158,8 +158,8 @@ func (s *Service) GetShelf(ctx context.Context, shelfID uuid.UUID, ownerID uuid.
 
 // UpdateLayout replaces the layout while keeping stable slot IDs when possible.
 func (s *Service) UpdateLayout(ctx context.Context, shelfID uuid.UUID, ownerID uuid.UUID, input UpdateLayoutInput) (ShelfWithLayout, []PlacementWithItem, error) {
-	if len(input.Slots) == 0 {
-		return ShelfWithLayout{}, nil, fmt.Errorf("%w: at least one slot is required", ErrValidation)
+	if input.Slots == nil {
+		return ShelfWithLayout{}, nil, fmt.Errorf("%w: slots must be an array", ErrValidation)
 	}
 
 	existing, err := s.repo.GetShelf(ctx, shelfID, ownerID)
@@ -221,14 +221,23 @@ func (s *Service) UpdateLayout(ctx context.Context, shelfID uuid.UUID, ownerID u
 		return ShelfWithLayout{}, nil, err
 	}
 
-	if err := s.updateItemPlacementCache(ctx, hydrated, itemIDsFromLayout(hydrated)); err != nil {
+	cacheItemIDs := itemIDsFromLayout(hydrated)
+	for id := range displacedItemIDs {
+		cacheItemIDs = append(cacheItemIDs, id)
+	}
+	if err := s.updateItemPlacementCache(ctx, hydrated, cacheItemIDs); err != nil {
 		return ShelfWithLayout{}, nil, err
 	}
 
 	var displaced []PlacementWithItem
 	if len(displacedItemIDs) > 0 {
-		for _, placement := range hydrated.Unplaced {
+		original, err := s.attachItems(ctx, existing, ownerID)
+		if err != nil {
+			return ShelfWithLayout{}, nil, err
+		}
+		for _, placement := range original.Placements {
 			if _, removed := displacedItemIDs[placement.Placement.ItemID]; removed {
+				placement.Placement.ShelfSlotID = nil
 				displaced = append(displaced, placement)
 			}
 		}
@@ -311,7 +320,7 @@ func normalizeSlots(
 	existingSlotIDSet map[uuid.UUID]struct{},
 ) ([]ShelfRow, []ShelfColumn, []ShelfSlot, error) {
 	if len(slots) == 0 {
-		return nil, nil, nil, fmt.Errorf("%w: at least one slot is required", ErrValidation)
+		return []ShelfRow{}, []ShelfColumn{}, []ShelfSlot{}, nil
 	}
 
 	key := func(rowIdx, colIdx int) string {
@@ -320,6 +329,18 @@ func normalizeSlots(
 
 	rowGroups := make(map[int][]LayoutSlotInput)
 	seenKeys := make(map[string]struct{})
+	explicitIDs := make(map[uuid.UUID]struct{})
+	for _, slot := range slots {
+		if slot.SlotID != nil {
+			if slot.NewSlot {
+				return nil, nil, nil, fmt.Errorf("%w: newSlot cannot include slotId", ErrValidation)
+			}
+			if _, exists := explicitIDs[*slot.SlotID]; exists {
+				return nil, nil, nil, fmt.Errorf("%w: duplicate slotId", ErrValidation)
+			}
+			explicitIDs[*slot.SlotID] = struct{}{}
+		}
+	}
 
 	for _, slot := range slots {
 		if slot.RowIndex < 0 || slot.ColIndex < 0 {
@@ -397,8 +418,12 @@ func normalizeSlots(
 					return nil, nil, nil, fmt.Errorf("%w: slotId %s does not belong to this shelf", ErrValidation, slot.SlotID.String())
 				}
 				slotID = *slot.SlotID
-			} else if existingID, ok := existingSlotIDs[colKey]; ok {
-				slotID = existingID
+			} else if existingID, ok := existingSlotIDs[colKey]; ok && !slot.NewSlot {
+				// Legacy clients omit IDs for unchanged slots. Do not steal an ID
+				// explicitly retained elsewhere in a reordered layout.
+				if _, reserved := explicitIDs[existingID]; !reserved {
+					slotID = existingID
+				}
 			}
 
 			normalizedSlots = append(normalizedSlots, ShelfSlot{
@@ -429,8 +454,14 @@ func (s *Service) attachItems(ctx context.Context, layout ShelfWithLayout, owner
 		itemMap[item.ID] = item
 	}
 
-	var placements []PlacementWithItem
-	var unplaced []PlacementWithItem
+	placements := make([]PlacementWithItem, 0)
+	unplaced := make([]PlacementWithItem, 0)
+	if layout.Rows == nil {
+		layout.Rows = []RowWithColumns{}
+	}
+	if layout.Slots == nil {
+		layout.Slots = []ShelfSlot{}
+	}
 	for _, placement := range layout.Placements {
 		item, ok := itemMap[placement.Placement.ItemID]
 		if !ok {

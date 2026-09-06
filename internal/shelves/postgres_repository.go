@@ -151,7 +151,7 @@ func (r *postgresRepository) SaveLayout(ctx context.Context, shelfID uuid.UUID, 
 	}
 
 	if len(removedSlotIDs) > 0 {
-		if _, err := tx.ExecContext(ctx, `UPDATE item_shelf_locations SET shelf_slot_id = NULL WHERE shelf_slot_id = ANY($1)`, pq.Array(removedSlotIDs)); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM item_shelf_locations WHERE shelf_id=$2 AND shelf_slot_id = ANY($1)`, pq.Array(removedSlotIDs), shelfID); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM shelf_slots WHERE shelf_id=$1 AND id = ANY($2)`, shelfID, pq.Array(removedSlotIDs)); err != nil {
@@ -172,16 +172,8 @@ func (r *postgresRepository) SaveLayout(ctx context.Context, shelfID uuid.UUID, 
 		slotIDs = append(slotIDs, slot.ID)
 	}
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM shelf_slots WHERE shelf_id=$1 AND id <> ALL($2)`, shelfID, pq.Array(slotIDs)); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM shelf_columns WHERE shelf_row_id IN (SELECT id FROM shelf_rows WHERE shelf_id=$1) AND id <> ALL($2)`, shelfID, pq.Array(colIDs)); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM shelf_rows WHERE shelf_id=$1 AND id <> ALL($2)`, shelfID, pq.Array(rowIDs)); err != nil {
-		return err
-	}
-
+	// Move surviving slots to their new parents before removing old parents;
+	// otherwise ON DELETE CASCADE would erase the slots and their placements.
 	if err := insertRows(ctx, tx, rows); err != nil {
 		return err
 	}
@@ -189,6 +181,18 @@ func (r *postgresRepository) SaveLayout(ctx context.Context, shelfID uuid.UUID, 
 		return err
 	}
 	if err := insertSlots(ctx, tx, slots); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM item_shelf_locations WHERE shelf_id=$1 AND shelf_slot_id IS NOT NULL AND shelf_slot_id <> ALL($2)`, shelfID, pq.Array(slotIDs)); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM shelf_slots WHERE shelf_id=$1 AND id <> ALL($2)`, shelfID, pq.Array(slotIDs)); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM shelf_columns WHERE shelf_row_id IN (SELECT id FROM shelf_rows WHERE shelf_id=$1) AND id <> ALL($2)`, shelfID, pq.Array(colIDs)); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM shelf_rows WHERE shelf_id=$1 AND id <> ALL($2)`, shelfID, pq.Array(rowIDs)); err != nil {
 		return err
 	}
 
@@ -375,7 +379,7 @@ func insertColumns(ctx context.Context, tx *sqlx.Tx, columns []ShelfColumn) erro
 		if _, err := tx.NamedExecContext(ctx, `
             INSERT INTO shelf_columns (id, shelf_row_id, col_index, x_start_norm, x_end_norm)
             VALUES (:id, :shelf_row_id, :col_index, :x_start_norm, :x_end_norm)
-            ON CONFLICT (id) DO UPDATE SET col_index = EXCLUDED.col_index, x_start_norm = EXCLUDED.x_start_norm, x_end_norm = EXCLUDED.x_end_norm
+            ON CONFLICT (id) DO UPDATE SET shelf_row_id = EXCLUDED.shelf_row_id, col_index = EXCLUDED.col_index, x_start_norm = EXCLUDED.x_start_norm, x_end_norm = EXCLUDED.x_end_norm
         `, col); err != nil {
 			return err
 		}
@@ -388,7 +392,7 @@ func insertSlots(ctx context.Context, tx *sqlx.Tx, slots []ShelfSlot) error {
 		if _, err := tx.NamedExecContext(ctx, `
             INSERT INTO shelf_slots (id, shelf_id, shelf_row_id, shelf_column_id, row_index, col_index, x_start_norm, x_end_norm, y_start_norm, y_end_norm)
             VALUES (:id, :shelf_id, :shelf_row_id, :shelf_column_id, :row_index, :col_index, :x_start_norm, :x_end_norm, :y_start_norm, :y_end_norm)
-            ON CONFLICT (id) DO UPDATE SET row_index = EXCLUDED.row_index, col_index = EXCLUDED.col_index, x_start_norm = EXCLUDED.x_start_norm, x_end_norm = EXCLUDED.x_end_norm, y_start_norm = EXCLUDED.y_start_norm, y_end_norm = EXCLUDED.y_end_norm
+            ON CONFLICT (id) DO UPDATE SET shelf_row_id = EXCLUDED.shelf_row_id, shelf_column_id = EXCLUDED.shelf_column_id, row_index = EXCLUDED.row_index, col_index = EXCLUDED.col_index, x_start_norm = EXCLUDED.x_start_norm, x_end_norm = EXCLUDED.x_end_norm, y_start_norm = EXCLUDED.y_start_norm, y_end_norm = EXCLUDED.y_end_norm
         `, slot); err != nil {
 			return err
 		}

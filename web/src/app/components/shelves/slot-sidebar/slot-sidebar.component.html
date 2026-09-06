@@ -47,8 +47,8 @@
         }
         @if (displacedItems.length) {
             <div class="sidebar__section">
-                <div class="sidebar__section-title">Displaced after save</div>
-                <p class="helper">Place these items in a new slot.</p>
+                <div class="sidebar__section-title">Removed from this shelf</div>
+                <p class="helper">These books remain in your library without a shelf assignment.</p>
                 <mat-chip-set class="chip-row">
                     @for (placement of displacedItems; track placement.item.id) {
                         <mat-chip>

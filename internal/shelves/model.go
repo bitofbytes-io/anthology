@@ -123,6 +123,8 @@ type ShelfSummary struct {
 
 // LayoutSlotInput captures layout updates for a slot's bounding box.
 type LayoutSlotInput struct {
+	// NewSlot distinguishes a replacement from legacy inputs that omit slotId.
+	NewSlot    bool       `json:"newSlot,omitempty"`
 	SlotID     *uuid.UUID `json:"slotId"`
 	RowIndex   int        `json:"rowIndex"`
 	ColIndex   int        `json:"colIndex"`

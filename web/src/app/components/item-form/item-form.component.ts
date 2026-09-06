@@ -111,8 +111,8 @@ export class ItemFormComponent implements OnChanges, OnInit {
         readAt: [null],
         notes: ['', [Validators.maxLength(500)]],
         seriesName: ['', [Validators.maxLength(200)]],
-        volumeNumber: [null, [Validators.min(1)]],
-        totalVolumes: [null, [Validators.min(1)]],
+        volumeNumber: [null, [Validators.min(1), Validators.max(200)]],
+        totalVolumes: [null, [Validators.min(1), Validators.max(200)]],
     });
 
     get isBook(): boolean {

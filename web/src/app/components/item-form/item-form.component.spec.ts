@@ -162,4 +162,14 @@ describe(ItemFormComponent.name, () => {
 
         expect(component.coverImageError).toBeNull();
     });
+    it('bounds both series fields at 200', () => {
+        const fixture = TestBed.createComponent(ItemFormComponent);
+        for (const field of ['volumeNumber', 'totalVolumes']) {
+            const control = fixture.componentInstance.form.get(field)!;
+            control.setValue(200);
+            expect(control.hasError('max')).toBe(false);
+            control.setValue(201);
+            expect(control.hasError('max')).toBe(true);
+        }
+    });
 });
