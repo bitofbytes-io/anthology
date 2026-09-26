@@ -7,5 +7,7 @@
 - Run `make web-install` before the first frontend build; after configuring the ignored `local.mk`, use `make api-run` and `make web-start` when the API and Angular dev server need to run separately.
 - Use `make local` to run the API and Angular dev server together after configuring ignored local settings.
 - Use `make api-test`, `make web-test`, and `make lint` for validation; UI changes should also receive browser verification when the application is available.
+- Match pull-request CI with `make api-test api-build`, `go test -race ./internal/items ./internal/shelves ./internal/exporter`, then `npm ci` under `web/` and `make web-test web-build`.
+- Set `ANTHOLOGY_TEST_DATABASE_URL` to a dedicated, disposable PostgreSQL database to include repository regressions; without it, those tests skip.
 - Capture browser auth state with `make auth-capture` only into the ignored `.auth/` directory.
 - Preserve the startup migration path: the API applies embedded Goose migrations before serving requests.
