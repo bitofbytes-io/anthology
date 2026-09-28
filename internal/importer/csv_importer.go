@@ -149,16 +149,6 @@ func (i *CSVImporter) Import(ctx context.Context, reader io.Reader, ownerID uuid
 	if err != nil {
 		return Summary{}, err
 	}
-	// Only files exported by Anthology (identified by the schemaVersion column)
-	// carry the exporter's formula-guard apostrophes; other files are taken
-	// verbatim.
-	anthologyExport := false
-	for _, column := range columns {
-		if column == "schemaversion" {
-			anthologyExport = true
-			break
-		}
-	}
 
 	type parsedRow struct {
 		number int
@@ -178,7 +168,7 @@ func (i *CSVImporter) Import(ctx context.Context, reader io.Reader, ownerID uuid
 			return Summary{}, fmt.Errorf("%w: failed to read row %d", ErrInvalidCSV, rowNumber+1)
 		}
 		rowNumber++
-		values := mapRecord(columns, record, anthologyExport)
+		values := mapRecord(columns, record)
 		if isRowEmpty(values) {
 			continue
 		}
@@ -478,18 +468,27 @@ func normalizeHeader(header []string) (map[int]string, error) {
 	return columns, nil
 }
 
-func mapRecord(columns map[int]string, record []string, unescape bool) map[string]string {
+// reversibleEscapeSchemaVersion is the first export schema whose formula-guard
+// apostrophes can be removed exactly (see exporter.UnescapeCSVCell).
+const reversibleEscapeSchemaVersion = 2
+
+// mapRecord maps a CSV record onto its column names. Formula-guard apostrophes
+// are removed only for rows exported by Anthology with schemaVersion 2 or
+// later: version 1 exports did not escape values already starting with an
+// apostrophe, and third-party files carry no guard, so both stay verbatim.
+func mapRecord(columns map[int]string, record []string) map[string]string {
 	values := make(map[string]string, len(columns))
 	for idx, column := range columns {
 		if idx >= len(record) {
 			values[column] = ""
 			continue
 		}
-		value := strings.TrimSpace(record[idx])
-		if unescape {
-			value = exporter.UnescapeCSVCell(value)
+		values[column] = strings.TrimSpace(record[idx])
+	}
+	if version, err := strconv.Atoi(values["schemaversion"]); err == nil && version >= reversibleEscapeSchemaVersion {
+		for column, value := range values {
+			values[column] = exporter.UnescapeCSVCell(value)
 		}
-		values[column] = value
 	}
 	return values
 }

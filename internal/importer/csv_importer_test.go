@@ -353,7 +353,7 @@ func TestCSVImporter_ReportsRowsLeftWhenRequestContextEnds(t *testing.T) {
 	}
 }
 
-func TestCSVImporter_UnescapesFormulaGuardOnlyForAnthologyExports(t *testing.T) {
+func TestCSVImporter_UnescapesFormulaGuardOnlyForSchemaV2Exports(t *testing.T) {
 	const legacyHeader = "title,creator,itemType,releaseYear,pageCount,isbn13,isbn10,description,coverImage,notes\n"
 	cases := []struct {
 		name      string
@@ -368,10 +368,27 @@ func TestCSVImporter_UnescapesFormulaGuardOnlyForAnthologyExports(t *testing.T) 
 			wantNotes: "'-draft",
 		},
 		{
-			name:      "anthology export strips formula guard",
+			name:      "schema v2 export strips formula guard",
 			csv:       "schemaVersion," + legacyHeader + "2,'=42,,book,,,,,,,'-draft\n",
 			wantTitle: "=42",
 			wantNotes: "-draft",
+		},
+		{
+			name:      "schema v2 export keeps a literal apostrophe value",
+			csv:       "schemaVersion," + legacyHeader + "2,''=foo,,book,,,,,,,'plain\n",
+			wantTitle: "'=foo",
+			wantNotes: "'plain",
+		},
+		{
+			name:      "schema v1 export is not unescaped",
+			csv:       "schemaVersion," + legacyHeader + "1,'=foo,,book,,,,,,,'-draft\n",
+			wantTitle: "'=foo",
+			wantNotes: "'-draft",
+		},
+		{
+			name:      "unparseable schema version is not unescaped",
+			csv:       "schemaVersion," + legacyHeader + "v2,'=foo,,book,,,,,,,\n",
+			wantTitle: "'=foo",
 		},
 	}
 	for _, tc := range cases {

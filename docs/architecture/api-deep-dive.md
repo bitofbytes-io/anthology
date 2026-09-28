@@ -159,7 +159,7 @@ CSV importer:
 * Book rows with missing title but ISBN/UPC will call catalog lookup to backfill metadata; otherwise title is required.
 * Lookups are capped at 100 per import and share a 30s time budget; rows beyond either limit are reported in `failed` and can be re-imported with a title or in a smaller file.
 * Upload capped at 5 MiB (HTTP handler).
-* Optional columns match the export format (including `seriesName`, `volumeNumber`, `totalVolumes`); older files without them still import. For files with a `schemaVersion` column (Anthology exports), a leading `'` added by the exporter before `=`, `+`, `-`, `@`, or tab is stripped; other files are imported verbatim.
+* Optional columns match the export format (including `seriesName`, `volumeNumber`, `totalVolumes`); older files without them still import. For rows whose `schemaVersion` is 2 or later (current Anthology exports), a leading `'` added by the exporter before `=`, `+`, `-`, `@`, or tab is stripped; version 1 exports and third-party files are imported verbatim.
 
 CSV exporter:
 * Columns are a superset of the import format so exports re-import cleanly.
