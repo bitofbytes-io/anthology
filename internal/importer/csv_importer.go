@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"anthology/internal/catalog"
+	"anthology/internal/exporter"
 	"anthology/internal/items"
 )
 
@@ -303,6 +304,15 @@ func (i *CSVImporter) buildInput(lookups *lookupAllowance, values map[string]str
 	platform := strings.TrimSpace(values["platform"])
 	ageGroup := strings.TrimSpace(values["agegroup"])
 	playerCount := strings.TrimSpace(values["playercount"])
+	seriesName := strings.TrimSpace(values["seriesname"])
+	volumeNumber, err := parseOptionalInt(values["volumenumber"], "volumeNumber")
+	if err != nil {
+		return items.CreateItemInput{}, meta, err
+	}
+	totalVolumes, err := parseOptionalInt(values["totalvolumes"], "totalVolumes")
+	if err != nil {
+		return items.CreateItemInput{}, meta, err
+	}
 
 	if itemType == items.ItemTypeBook && title == "" {
 		identifier := meta.identifier
@@ -365,6 +375,9 @@ func (i *CSVImporter) buildInput(lookups *lookupAllowance, values map[string]str
 		Platform:       platform,
 		AgeGroup:       ageGroup,
 		PlayerCount:    playerCount,
+		SeriesName:     seriesName,
+		VolumeNumber:   volumeNumber,
+		TotalVolumes:   totalVolumes,
 		ReadingStatus:  readingStatus,
 		ReadAt:         readAt,
 		Notes:          notes,
@@ -437,7 +450,7 @@ func mapRecord(columns map[int]string, record []string) map[string]string {
 			values[column] = ""
 			continue
 		}
-		values[column] = strings.TrimSpace(record[idx])
+		values[column] = exporter.UnescapeCSVCell(strings.TrimSpace(record[idx]))
 	}
 	return values
 }

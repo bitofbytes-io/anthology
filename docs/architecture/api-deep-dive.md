@@ -159,6 +159,12 @@ CSV importer:
 * Book rows with missing title but ISBN/UPC will call catalog lookup to backfill metadata; otherwise title is required.
 * Lookups are capped at 100 per import and share a 30s time budget; rows beyond either limit are reported in `failed` and can be re-imported with a title or in a smaller file.
 * Upload capped at 5 MiB (HTTP handler).
+* Optional columns match the export format (including `seriesName`, `volumeNumber`, `totalVolumes`); older files without them still import. A leading `'` added by the exporter before `=`, `+`, `-`, `@`, or tab is stripped.
+
+CSV exporter:
+* Columns are a superset of the import format so exports re-import cleanly.
+* Values that start with a formula trigger are prefixed with `'` for spreadsheet safety.
+* Covers stored inline as `data:` URIs are omitted (URL covers are kept); they exceed spreadsheet cell limits and push exports past the import upload cap.
 
 Catalog lookup:
 * Query trimmed, must be >=3 characters.
