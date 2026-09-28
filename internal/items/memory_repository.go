@@ -152,6 +152,62 @@ func (r *InMemoryRepository) List(_ context.Context, opts ListOptions) ([]Item, 
 	return items, nil
 }
 
+// ListByIDs returns the owner's items with the given IDs.
+func (r *InMemoryRepository) ListByIDs(_ context.Context, ids []uuid.UUID, ownerID uuid.UUID) ([]Item, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	items := make([]Item, 0, len(ids))
+	seen := make(map[uuid.UUID]struct{}, len(ids))
+	for _, id := range ids {
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		item, ok := r.data[id]
+		if !ok || item.OwnerID != ownerID {
+			continue
+		}
+		items = append(items, item)
+	}
+	slices.SortFunc(items, compareItemsByCreatedDesc)
+	return items, nil
+}
+
+// FindByISBN returns the owner's most recently created book matching isbn
+// against either ISBN field (see normalizeISBN and isbnMatchKey).
+func (r *InMemoryRepository) FindByISBN(_ context.Context, isbn string, ownerID uuid.UUID) (Item, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	normalized := normalizeISBN(isbn)
+	if normalized == "" {
+		return Item{}, ErrNotFound
+	}
+
+	var (
+		match Item
+		found bool
+	)
+	for _, id := range r.order {
+		item, ok := r.data[id]
+		if !ok || item.OwnerID != ownerID || item.ItemType != ItemTypeBook {
+			continue
+		}
+		if isbnMatchKey(item.ISBN13) != normalized && isbnMatchKey(item.ISBN10) != normalized {
+			continue
+		}
+		if !found || compareItemsByCreatedDesc(item, match) < 0 {
+			match = item
+			found = true
+		}
+	}
+	if !found {
+		return Item{}, ErrNotFound
+	}
+	return match, nil
+}
+
 // Update replaces an existing item.
 func (r *InMemoryRepository) Update(_ context.Context, item Item) (Item, error) {
 	r.mu.Lock()

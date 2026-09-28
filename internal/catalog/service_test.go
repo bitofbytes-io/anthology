@@ -7,6 +7,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -23,8 +27,11 @@ func TestLookupBookByQueryReturnsMetadata(t *testing.T) {
 		if got := values.Get("maxResults"); got != "5" {
 			t.Fatalf("expected maxResults=5, got %s", got)
 		}
-		if got := values.Get("key"); got != "test-key" {
-			t.Fatalf("expected key query param to be set, got %s", got)
+		if values.Has("key") {
+			t.Fatalf("expected API key to be omitted from the query string, got %s", r.URL.RawQuery)
+		}
+		if got := r.Header.Get("X-Goog-Api-Key"); got != "test-key" {
+			t.Fatalf("expected X-Goog-Api-Key header to be set, got %q", got)
 		}
 
 		resp := googleBooksResponse{
@@ -231,6 +238,44 @@ func TestLookupBookByQueryReturnsNotFoundWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestGoogleBooksAPIKeyNeverAppearsInURLOrErrors(t *testing.T) {
+	t.Parallel()
+	const secret = "super-secret-key"
+	var seenURLs []string
+	client := newTestClient(t, func(r *http.Request) (*http.Response, error) {
+		seenURLs = append(seenURLs, r.URL.String())
+		return nil, errors.New("connection refused")
+	})
+	svc := NewService(client, WithGoogleBooksBaseURL("http://example.test"), WithGoogleBooksAPIKey(secret))
+
+	_, lookupErr := svc.Lookup(context.Background(), "example keywords", CategoryBook)
+	if lookupErr == nil {
+		t.Fatal("expected lookup error")
+	}
+	_, volumeErr := svc.LookupByVolumeID(context.Background(), "vol-1")
+	if volumeErr == nil {
+		t.Fatal("expected volume lookup error")
+	}
+
+	for _, err := range []error{lookupErr, volumeErr} {
+		if strings.Contains(err.Error(), secret) {
+			t.Fatalf("error leaks API key: %v", err)
+		}
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			t.Fatalf("expected *url.Error to be unwrapped, got %v", err)
+		}
+	}
+	if len(seenURLs) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(seenURLs))
+	}
+	for _, u := range seenURLs {
+		if strings.Contains(u, secret) {
+			t.Fatalf("request URL leaks API key: %s", u)
+		}
+	}
+}
+
 func TestLookupRejectsShortQueries(t *testing.T) {
 	svc := NewService(nil, WithGoogleBooksAPIKey("test"))
 	if _, err := svc.Lookup(context.Background(), "no", CategoryBook); !errors.Is(err, ErrInvalidQuery) {
@@ -264,5 +309,60 @@ func jsonResponse(t *testing.T, status int, payload any) *http.Response {
 			"Content-Type": []string{"application/json"},
 		},
 		Body: io.NopCloser(bytes.NewReader(raw)),
+	}
+}
+
+func TestGoogleBooksRedirectsNeverForwardAPIKey(t *testing.T) {
+	t.Parallel()
+	const secret = "redirect-secret-key"
+
+	var leaked atomic.Int32
+	attacker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Goog-Api-Key") != "" || strings.Contains(r.URL.RawQuery, secret) {
+			leaked.Add(1)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer attacker.Close()
+
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, attacker.URL+"/volumes", http.StatusFound)
+	}))
+	defer origin.Close()
+
+	svc := NewService(origin.Client(), WithGoogleBooksBaseURL(origin.URL), WithGoogleBooksAPIKey(secret))
+	_, err := svc.Lookup(context.Background(), "example keywords", CategoryBook)
+	if err == nil || !strings.Contains(err.Error(), "refusing google books redirect") {
+		t.Fatalf("expected redirect to be refused, got %v", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("error leaks API key: %v", err)
+	}
+	if leaked.Load() != 0 {
+		t.Fatal("cross-origin redirect target received the API key")
+	}
+}
+
+func TestSameOriginHTTPSRedirectsPolicy(t *testing.T) {
+	t.Parallel()
+	mustReq := func(raw string) *http.Request {
+		req, err := http.NewRequest(http.MethodGet, raw, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return req
+	}
+	origin := []*http.Request{mustReq("https://www.googleapis.com/books/v1/volumes")}
+	cases := map[string]bool{
+		"https://www.googleapis.com/books/v1/volumes?page=2": true,
+		"http://www.googleapis.com/books/v1/volumes":         false,
+		"https://evil.example/books/v1/volumes":              false,
+		"https://www.googleapis.com:8443/books":              false,
+	}
+	for target, allowed := range cases {
+		err := sameOriginHTTPSRedirects(mustReq(target), origin)
+		if (err == nil) != allowed {
+			t.Errorf("redirect to %s: allowed=%v, err=%v", target, allowed, err)
+		}
 	}
 }

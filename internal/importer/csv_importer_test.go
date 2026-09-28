@@ -194,3 +194,217 @@ func TestCSVImporter_ImportsExtendedFields(t *testing.T) {
 		t.Fatalf("expected updatedAt to be %s", updatedAt.Format(time.RFC3339))
 	}
 }
+
+func TestCSVImporter_LookupFailureDoesNotLeakUpstreamError(t *testing.T) {
+	store := &stubStore{}
+	upstream := fmt.Errorf("call google books: Get \"https://www.googleapis.com/books/v1/volumes?key=secret-key\": dial tcp: timeout")
+	importer := NewCSVImporter(store, &stubCatalog{err: upstream})
+	csv := "title,creator,itemType,releaseYear,pageCount,isbn13,isbn10,description,coverImage,notes\n" +
+		",,book,,,9780000000000,,,,\n"
+
+	summary, err := importer.Import(context.Background(), strings.NewReader(csv), testOwnerID)
+	if err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+	if len(summary.Failed) != 1 {
+		t.Fatalf("expected 1 failed record, got %d", len(summary.Failed))
+	}
+	message := summary.Failed[0].Error
+	if strings.Contains(message, "secret-key") || strings.Contains(message, "googleapis") {
+		t.Fatalf("failed record leaks upstream error: %q", message)
+	}
+	if message != errMetadataLookupFailed.Error() {
+		t.Fatalf("expected generic lookup failure message, got %q", message)
+	}
+}
+
+type countingCatalog struct {
+	calls int
+	block bool
+}
+
+func (c *countingCatalog) Lookup(ctx context.Context, query string, category catalog.Category) ([]catalog.Metadata, error) {
+	c.calls++
+	if c.block {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return []catalog.Metadata{{Title: "Title " + query, ItemType: string(items.ItemTypeBook)}}, nil
+}
+
+func titleLessRows(n int) string {
+	var builder strings.Builder
+	builder.WriteString("title,creator,itemType,releaseYear,pageCount,isbn13,isbn10,description,coverImage,notes\n")
+	for idx := 0; idx < n; idx++ {
+		fmt.Fprintf(&builder, ",,book,,,978%010d,,,,\n", idx)
+	}
+	return builder.String()
+}
+
+func TestCSVImporter_CapsCatalogLookupsPerImport(t *testing.T) {
+	store := &stubStore{}
+	lookups := &countingCatalog{}
+	importer := NewCSVImporter(store, lookups)
+
+	summary, err := importer.Import(context.Background(), strings.NewReader(titleLessRows(MaxLookupsPerImport+3)), testOwnerID)
+	if err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+	if lookups.calls != MaxLookupsPerImport {
+		t.Fatalf("expected %d lookups, got %d", MaxLookupsPerImport, lookups.calls)
+	}
+	if summary.Imported != MaxLookupsPerImport {
+		t.Fatalf("expected %d imports, got %d", MaxLookupsPerImport, summary.Imported)
+	}
+	if len(summary.Failed) != 3 {
+		t.Fatalf("expected 3 failed rows, got %d", len(summary.Failed))
+	}
+	for _, failed := range summary.Failed {
+		if !strings.Contains(failed.Error, "limit of 100 ISBN lookups") {
+			t.Fatalf("unexpected failure message: %q", failed.Error)
+		}
+	}
+}
+
+func TestCSVImporter_StopsLookupsWhenTimeBudgetIsSpent(t *testing.T) {
+	store := &stubStore{}
+	lookups := &countingCatalog{block: true}
+	importer := NewCSVImporter(store, lookups)
+	importer.lookupBudget = 20 * time.Millisecond
+
+	csv := "title,creator,itemType,releaseYear,pageCount,isbn13,isbn10,description,coverImage,notes\n" +
+		",,book,,,9780000000001,,,,\n" +
+		",,book,,,9780000000002,,,,\n" +
+		"Titled Book,Author,book,,,,,,,\n"
+
+	summary, err := importer.Import(context.Background(), strings.NewReader(csv), testOwnerID)
+	if err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+	if lookups.calls != 1 {
+		t.Fatalf("expected a single lookup before the budget ran out, got %d", lookups.calls)
+	}
+	if summary.Imported != 1 {
+		t.Fatalf("expected titled row to import, got %d", summary.Imported)
+	}
+	if len(summary.Failed) != 2 {
+		t.Fatalf("expected 2 failed rows, got %d", len(summary.Failed))
+	}
+	for _, failed := range summary.Failed {
+		if failed.Error != errLookupBudgetExhausted.Error() {
+			t.Fatalf("unexpected failure message: %q", failed.Error)
+		}
+	}
+}
+
+// cancellingStore cancels the import context during its cancelAt-th Create,
+// modelling the request deadline expiring mid-import.
+type cancellingStore struct {
+	stubStore
+	cancel   context.CancelFunc
+	calls    int
+	cancelAt int
+}
+
+func (s *cancellingStore) Create(ctx context.Context, input items.CreateItemInput) (items.Item, error) {
+	s.calls++
+	if s.calls == s.cancelAt {
+		s.cancel()
+		return items.Item{}, fmt.Errorf("insert item: %w", context.Canceled)
+	}
+	return s.stubStore.Create(ctx, input)
+}
+
+func TestCSVImporter_ReportsRowsLeftWhenRequestContextEnds(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store := &cancellingStore{cancel: cancel, cancelAt: 2}
+	importer := NewCSVImporter(store, &stubCatalog{})
+	csv := "title,creator,itemType,releaseYear,pageCount,isbn13,isbn10,description,coverImage,notes\n" +
+		"One,,book,,,,,,,\n" +
+		"Two,,book,,,,,,,\n" +
+		"Three,,book,,,9780000000003,,,,\n" +
+		"Four,,movie,,,,,,,\n"
+
+	summary, err := importer.Import(ctx, strings.NewReader(csv), testOwnerID)
+	if err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+	if !summary.Interrupted {
+		t.Fatal("expected summary to be marked interrupted")
+	}
+	if summary.Imported != 1 {
+		t.Fatalf("expected 1 import before the deadline, got %d", summary.Imported)
+	}
+	if store.calls != 2 {
+		t.Fatalf("expected no inserts after the context ended, got %d calls", store.calls)
+	}
+	if len(summary.Failed) != 3 {
+		t.Fatalf("expected 3 unprocessed rows, got %+v", summary.Failed)
+	}
+	for idx, want := range []string{"Two", "Three", "Four"} {
+		failed := summary.Failed[idx]
+		if failed.Title != want || failed.Error != errImportInterrupted.Error() {
+			t.Fatalf("unexpected failed record %d: %+v", idx, failed)
+		}
+	}
+	if summary.Failed[1].Identifier != "9780000000003" {
+		t.Fatalf("expected identifier for unprocessed row, got %+v", summary.Failed[1])
+	}
+}
+
+func TestCSVImporter_UnescapesFormulaGuardOnlyForSchemaV2Exports(t *testing.T) {
+	const legacyHeader = "title,creator,itemType,releaseYear,pageCount,isbn13,isbn10,description,coverImage,notes\n"
+	cases := []struct {
+		name      string
+		csv       string
+		wantTitle string
+		wantNotes string
+	}{
+		{
+			name:      "third-party file keeps apostrophes",
+			csv:       legacyHeader + "'=42,,book,,,,,,,'-draft\n",
+			wantTitle: "'=42",
+			wantNotes: "'-draft",
+		},
+		{
+			name:      "schema v2 export strips formula guard",
+			csv:       "schemaVersion," + legacyHeader + "2,'=42,,book,,,,,,,'-draft\n",
+			wantTitle: "=42",
+			wantNotes: "-draft",
+		},
+		{
+			name:      "schema v2 export keeps a literal apostrophe value",
+			csv:       "schemaVersion," + legacyHeader + "2,''=foo,,book,,,,,,,'plain\n",
+			wantTitle: "'=foo",
+			wantNotes: "'plain",
+		},
+		{
+			name:      "schema v1 export is not unescaped",
+			csv:       "schemaVersion," + legacyHeader + "1,'=foo,,book,,,,,,,'-draft\n",
+			wantTitle: "'=foo",
+			wantNotes: "'-draft",
+		},
+		{
+			name:      "unparseable schema version is not unescaped",
+			csv:       "schemaVersion," + legacyHeader + "v2,'=foo,,book,,,,,,,\n",
+			wantTitle: "'=foo",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &stubStore{}
+			summary, err := NewCSVImporter(store, &stubCatalog{}).Import(context.Background(), strings.NewReader(tc.csv), testOwnerID)
+			if err != nil {
+				t.Fatalf("import failed: %v", err)
+			}
+			if summary.Imported != 1 || len(store.createdInputs) != 1 {
+				t.Fatalf("expected one import, got %+v", summary)
+			}
+			input := store.createdInputs[0]
+			if input.Title != tc.wantTitle || input.Notes != tc.wantNotes {
+				t.Fatalf("got title %q notes %q; want %q, %q", input.Title, input.Notes, tc.wantTitle, tc.wantNotes)
+			}
+		})
+	}
+}

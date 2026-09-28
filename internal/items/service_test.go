@@ -145,14 +145,14 @@ func TestServiceUpdate(t *testing.T) {
 	repo := NewInMemoryRepository(nil)
 	svc := NewService(repo)
 
-	created, err := svc.Create(context.Background(), CreateItemInput{OwnerID: testOwnerID, Title: "Initial", ItemType: ItemTypeGame})
+	created, err := svc.Create(context.Background(), CreateItemInput{OwnerID: testOwnerID, Title: "Initial", ItemType: ItemTypeBook})
 	if err != nil {
 		t.Fatalf("create failed: %v", err)
 	}
 
 	title := "Updated"
 	notes := "Now includes expansion content"
-	itemType := ItemTypeGame
+	itemType := ItemTypeBook
 	newDescription := "Updated overview"
 	isbn13 := "9781984801265"
 	isbn10 := "1984801263"
@@ -504,6 +504,108 @@ func TestServiceUpdateRejectsBlankTitleOrItemType(t *testing.T) {
 	}
 }
 
+func TestServiceRejectsUnknownItemType(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(NewInMemoryRepository(nil))
+
+	_, err := svc.Create(ctx, CreateItemInput{OwnerID: testOwnerID, Title: "Mystery", ItemType: ItemType("comic")})
+	var validation *ValidationError
+	if !errors.As(err, &validation) || !strings.Contains(err.Error(), "itemType must be one of") {
+		t.Fatalf("expected itemType validation error on create, got %v", err)
+	}
+
+	item, err := svc.Create(ctx, CreateItemInput{OwnerID: testOwnerID, Title: "Known", ItemType: ItemTypeBook})
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	unknown := ItemType("Book")
+	_, err = svc.Update(ctx, item.ID, testOwnerID, UpdateItemInput{ItemType: &unknown})
+	if !errors.As(err, &validation) || !strings.Contains(err.Error(), "itemType must be one of") {
+		t.Fatalf("expected itemType validation error on update, got %v", err)
+	}
+	stored, err := svc.Get(ctx, item.ID, testOwnerID)
+	if err != nil {
+		t.Fatalf("get failed: %v", err)
+	}
+	if stored.ItemType != ItemTypeBook {
+		t.Fatalf("expected item type to remain book, got %q", stored.ItemType)
+	}
+}
+
+func TestServiceUpdateChangingTypeClearsFieldsForOtherTypes(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(NewInMemoryRepository(nil))
+	rating := 7
+	price := 12.5
+
+	book, err := svc.Create(ctx, CreateItemInput{
+		OwnerID:        testOwnerID,
+		Title:          "Book Then Game",
+		ItemType:       ItemTypeBook,
+		Format:         FormatPaperback,
+		Genre:          GenreFiction,
+		Rating:         &rating,
+		RetailPriceUsd: &price,
+		GoogleVolumeId: "vol-1",
+	})
+	if err != nil {
+		t.Fatalf("create book failed: %v", err)
+	}
+
+	gameType := ItemTypeGame
+	platform := "Switch"
+	game, err := svc.Update(ctx, book.ID, testOwnerID, UpdateItemInput{ItemType: &gameType, Platform: &platform})
+	if err != nil {
+		t.Fatalf("update to game failed: %v", err)
+	}
+	if game.Format != "" || game.Genre != "" || game.Rating != nil || game.RetailPriceUsd != nil || game.GoogleVolumeId != "" {
+		t.Fatalf("expected book-only fields to be cleared, got %+v", game)
+	}
+	if game.Platform != "Switch" {
+		t.Fatalf("expected platform to be kept for game, got %q", game.Platform)
+	}
+
+	movieType := ItemTypeMovie
+	movie, err := svc.Update(ctx, book.ID, testOwnerID, UpdateItemInput{ItemType: &movieType})
+	if err != nil {
+		t.Fatalf("update to movie failed: %v", err)
+	}
+	if movie.Platform != "" || movie.AgeGroup != "" || movie.PlayerCount != "" {
+		t.Fatalf("expected game-only fields to be cleared, got %+v", movie)
+	}
+}
+
+func TestServiceClearsBookIdentifiersForNonBooks(t *testing.T) {
+	ctx := context.Background()
+	repo := NewInMemoryRepository(nil)
+	svc := NewService(repo)
+	pages := 320
+
+	book, err := svc.Create(ctx, CreateItemInput{OwnerID: testOwnerID, Title: "Was A Book", ItemType: ItemTypeBook, ISBN13: "9780000000001", ISBN10: "0000000001", PageCount: &pages})
+	if err != nil {
+		t.Fatalf("create book failed: %v", err)
+	}
+	gameType := ItemTypeGame
+	game, err := svc.Update(ctx, book.ID, testOwnerID, UpdateItemInput{ItemType: &gameType})
+	if err != nil {
+		t.Fatalf("update to game failed: %v", err)
+	}
+	if game.ISBN13 != "" || game.ISBN10 != "" || game.PageCount != nil {
+		t.Fatalf("expected ISBNs and page count to be cleared, got %+v", game)
+	}
+	if _, err := repo.FindByISBN(ctx, "9780000000001", testOwnerID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected former ISBN not to match the converted item, got %v", err)
+	}
+
+	movie, err := svc.Create(ctx, CreateItemInput{OwnerID: testOwnerID, Title: "Movie", ItemType: ItemTypeMovie, ISBN13: "9780000000002", PageCount: &pages})
+	if err != nil {
+		t.Fatalf("create movie failed: %v", err)
+	}
+	if movie.ISBN13 != "" || movie.PageCount != nil {
+		t.Fatalf("expected book-only fields to be dropped on create, got %+v", movie)
+	}
+}
+
 func TestServiceRejectsOversizedCoverImage(t *testing.T) {
 	repo := NewInMemoryRepository(nil)
 	svc := NewService(repo)
@@ -661,6 +763,18 @@ func (r *seriesUpdateRepo) List(context.Context, ListOptions) ([]Item, error) {
 	r.t.Helper()
 	r.t.Fatalf("unexpected List call")
 	return nil, nil
+}
+
+func (r *seriesUpdateRepo) ListByIDs(context.Context, []uuid.UUID, uuid.UUID) ([]Item, error) {
+	r.t.Helper()
+	r.t.Fatalf("unexpected ListByIDs call")
+	return nil, nil
+}
+
+func (r *seriesUpdateRepo) FindByISBN(context.Context, string, uuid.UUID) (Item, error) {
+	r.t.Helper()
+	r.t.Fatalf("unexpected FindByISBN call")
+	return Item{}, nil
 }
 
 func (r *seriesUpdateRepo) Update(context.Context, Item) (Item, error) {

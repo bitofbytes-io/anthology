@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"anthology/internal/catalog"
+	"anthology/internal/exporter"
 	"anthology/internal/items"
 )
 
@@ -31,6 +32,17 @@ type Summary struct {
 	SkippedDuplicates []SkippedRecord `json:"skippedDuplicates"`
 	Failed            []FailedRecord  `json:"failed"`
 	TruncatedRecords  bool            `json:"truncatedRecords,omitempty"`
+	// Interrupted reports that the request context ended before every row was
+	// processed; the unprocessed rows are listed in Failed.
+	Interrupted bool `json:"interrupted,omitempty"`
+}
+
+func (s *Summary) addFailed(record FailedRecord) {
+	if len(s.Failed) < MaxFailedRecords {
+		s.Failed = append(s.Failed, record)
+		return
+	}
+	s.TruncatedRecords = true
 }
 
 type SkippedRecord struct {
@@ -49,6 +61,12 @@ type FailedRecord struct {
 
 var ErrInvalidCSV = errors.New("invalid csv upload")
 
+var errMetadataLookupFailed = errors.New("metadata lookup failed; add a title to this row or try again later")
+
+var errImportInterrupted = errors.New("import stopped before this row finished because the request ran out of time; upload the file again to import the remaining rows (rows already imported are skipped as duplicates)")
+
+var errLookupBudgetExhausted = errors.New("metadata lookup skipped: this import ran out of time for ISBN lookups; add a title to this row or import it in a smaller file")
+
 // MaxImportRows limits the number of data rows processed per CSV import to
 // prevent excessive memory usage and long-running requests.
 const MaxImportRows = 1000
@@ -56,6 +74,16 @@ const MaxImportRows = 1000
 // MaxFailedRecords caps the number of failed/skipped records stored in the
 // summary to avoid unbounded memory growth from malformed uploads.
 const MaxFailedRecords = 100
+
+// MaxLookupsPerImport caps the number of catalog lookups (rows that need
+// metadata because they have an ISBN but no title) performed per import.
+// Rows beyond the cap are reported as failed.
+const MaxLookupsPerImport = 100
+
+// LookupBudget bounds the total time an import may spend on catalog lookups so
+// the request completes within the HTTP server's request timeout. Rows that
+// still need a lookup once the budget is spent are reported as failed.
+const LookupBudget = 30 * time.Second
 
 var requiredColumns = []string{
 	"title",
@@ -71,12 +99,26 @@ var requiredColumns = []string{
 }
 
 type CSVImporter struct {
-	items   ItemStore
-	catalog CatalogLookup
+	items        ItemStore
+	catalog      CatalogLookup
+	maxLookups   int
+	lookupBudget time.Duration
 }
 
 func NewCSVImporter(items ItemStore, catalog CatalogLookup) *CSVImporter {
-	return &CSVImporter{items: items, catalog: catalog}
+	return &CSVImporter{
+		items:        items,
+		catalog:      catalog,
+		maxLookups:   MaxLookupsPerImport,
+		lookupBudget: LookupBudget,
+	}
+}
+
+// lookupAllowance tracks how many catalog lookups and how much lookup time
+// remain for a single import.
+type lookupAllowance struct {
+	ctx       context.Context
+	remaining int
 }
 
 func (i *CSVImporter) Import(ctx context.Context, reader io.Reader, ownerID uuid.UUID) (Summary, error) {
@@ -144,20 +186,35 @@ func (i *CSVImporter) Import(ctx context.Context, reader io.Reader, ownerID uuid
 
 	summary := Summary{TotalRows: totalRows}
 
-	for _, row := range rows {
-		values := row.values
-		input, meta, rowErr := i.buildInput(ctx, values, ownerID)
-		if rowErr != nil {
-			if len(summary.Failed) < MaxFailedRecords {
-				summary.Failed = append(summary.Failed, FailedRecord{
-					Row:        row.number,
-					Title:      meta.title,
-					Identifier: meta.identifier,
-					Error:      rowErr.Error(),
+	lookupCtx, cancelLookups := context.WithTimeout(ctx, i.lookupBudget)
+	defer cancelLookups()
+	allowance := &lookupAllowance{ctx: lookupCtx, remaining: i.maxLookups}
+
+	for idx, row := range rows {
+		if ctx.Err() != nil {
+			// The request is out of time: report the remaining rows instead of
+			// letting each insert fail with a context error.
+			summary.Interrupted = true
+			for _, rest := range rows[idx:] {
+				summary.addFailed(FailedRecord{
+					Row:        rest.number,
+					Title:      strings.TrimSpace(rest.values["title"]),
+					Identifier: firstNonEmpty(rest.values["isbn13"], rest.values["isbn10"]),
+					Error:      errImportInterrupted.Error(),
 				})
-			} else {
-				summary.TruncatedRecords = true
 			}
+			break
+		}
+
+		values := row.values
+		input, meta, rowErr := i.buildInput(allowance, values, ownerID)
+		if rowErr != nil {
+			summary.addFailed(FailedRecord{
+				Row:        row.number,
+				Title:      meta.title,
+				Identifier: meta.identifier,
+				Error:      rowErr.Error(),
+			})
 			continue
 		}
 
@@ -176,16 +233,17 @@ func (i *CSVImporter) Import(ctx context.Context, reader io.Reader, ownerID uuid
 		}
 
 		if _, err := i.items.Create(ctx, input); err != nil {
-			if len(summary.Failed) < MaxFailedRecords {
-				summary.Failed = append(summary.Failed, FailedRecord{
-					Row:        row.number,
-					Title:      input.Title,
-					Identifier: firstIdentifier(input),
-					Error:      err.Error(),
-				})
-			} else {
-				summary.TruncatedRecords = true
+			message := err.Error()
+			if ctx.Err() != nil {
+				summary.Interrupted = true
+				message = errImportInterrupted.Error()
 			}
+			summary.addFailed(FailedRecord{
+				Row:        row.number,
+				Title:      input.Title,
+				Identifier: firstIdentifier(input),
+				Error:      message,
+			})
 			continue
 		}
 
@@ -201,7 +259,7 @@ type rowMeta struct {
 	identifier string
 }
 
-func (i *CSVImporter) buildInput(ctx context.Context, values map[string]string, ownerID uuid.UUID) (items.CreateItemInput, rowMeta, error) {
+func (i *CSVImporter) buildInput(lookups *lookupAllowance, values map[string]string, ownerID uuid.UUID) (items.CreateItemInput, rowMeta, error) {
 	meta := rowMeta{}
 
 	rawType := strings.ToLower(values["itemtype"])
@@ -271,13 +329,22 @@ func (i *CSVImporter) buildInput(ctx context.Context, values map[string]string, 
 	platform := strings.TrimSpace(values["platform"])
 	ageGroup := strings.TrimSpace(values["agegroup"])
 	playerCount := strings.TrimSpace(values["playercount"])
+	seriesName := strings.TrimSpace(values["seriesname"])
+	volumeNumber, err := parseOptionalInt(values["volumenumber"], "volumeNumber")
+	if err != nil {
+		return items.CreateItemInput{}, meta, err
+	}
+	totalVolumes, err := parseOptionalInt(values["totalvolumes"], "totalVolumes")
+	if err != nil {
+		return items.CreateItemInput{}, meta, err
+	}
 
 	if itemType == items.ItemTypeBook && title == "" {
 		identifier := meta.identifier
 		if identifier == "" {
 			return items.CreateItemInput{}, meta, fmt.Errorf("provide a title or ISBN/UPC for books")
 		}
-		metadata, err := i.lookupBook(ctx, identifier)
+		metadata, err := i.lookupBook(lookups, identifier)
 		if err != nil {
 			return items.CreateItemInput{}, meta, err
 		}
@@ -333,6 +400,9 @@ func (i *CSVImporter) buildInput(ctx context.Context, values map[string]string, 
 		Platform:       platform,
 		AgeGroup:       ageGroup,
 		PlayerCount:    playerCount,
+		SeriesName:     seriesName,
+		VolumeNumber:   volumeNumber,
+		TotalVolumes:   totalVolumes,
 		ReadingStatus:  readingStatus,
 		ReadAt:         readAt,
 		Notes:          notes,
@@ -341,20 +411,32 @@ func (i *CSVImporter) buildInput(ctx context.Context, values map[string]string, 
 	}, meta, nil
 }
 
-func (i *CSVImporter) lookupBook(ctx context.Context, query string) (catalog.Metadata, error) {
+func (i *CSVImporter) lookupBook(lookups *lookupAllowance, query string) (catalog.Metadata, error) {
 	if i.catalog == nil {
 		return catalog.Metadata{}, fmt.Errorf("%w: metadata lookup is unavailable", ErrInvalidCSV)
 	}
+	if lookups.remaining <= 0 {
+		return catalog.Metadata{}, fmt.Errorf("metadata lookup skipped: this import reached its limit of %d ISBN lookups; add a title to this row or import it in a smaller file", i.maxLookups)
+	}
+	if lookups.ctx.Err() != nil {
+		return catalog.Metadata{}, errLookupBudgetExhausted
+	}
+	lookups.remaining--
 
-	metadata, err := i.catalog.Lookup(ctx, query, catalog.CategoryBook)
+	metadata, err := i.catalog.Lookup(lookups.ctx, query, catalog.CategoryBook)
 	if err != nil {
+		if lookups.ctx.Err() != nil {
+			return catalog.Metadata{}, errLookupBudgetExhausted
+		}
 		if errors.Is(err, catalog.ErrNotFound) {
 			return catalog.Metadata{}, fmt.Errorf("no metadata found for %s", query)
 		}
 		if errors.Is(err, catalog.ErrInvalidQuery) {
 			return catalog.Metadata{}, fmt.Errorf("ISBN/UPC %s is not valid", query)
 		}
-		return catalog.Metadata{}, err
+		// Unexpected lookup failures can carry upstream transport details, so
+		// report a generic message instead of returning them to the browser.
+		return catalog.Metadata{}, errMetadataLookupFailed
 	}
 	if len(metadata) == 0 {
 		return catalog.Metadata{}, fmt.Errorf("no metadata found for %s", query)
@@ -386,6 +468,14 @@ func normalizeHeader(header []string) (map[int]string, error) {
 	return columns, nil
 }
 
+// reversibleEscapeSchemaVersion is the first export schema whose formula-guard
+// apostrophes can be removed exactly (see exporter.UnescapeCSVCell).
+const reversibleEscapeSchemaVersion = 2
+
+// mapRecord maps a CSV record onto its column names. Formula-guard apostrophes
+// are removed only for rows exported by Anthology with schemaVersion 2 or
+// later: version 1 exports did not escape values already starting with an
+// apostrophe, and third-party files carry no guard, so both stay verbatim.
 func mapRecord(columns map[int]string, record []string) map[string]string {
 	values := make(map[string]string, len(columns))
 	for idx, column := range columns {
@@ -394,6 +484,11 @@ func mapRecord(columns map[int]string, record []string) map[string]string {
 			continue
 		}
 		values[column] = strings.TrimSpace(record[idx])
+	}
+	if version, err := strconv.Atoi(values["schemaversion"]); err == nil && version >= reversibleEscapeSchemaVersion {
+		for column, value := range values {
+			values[column] = exporter.UnescapeCSVCell(value)
+		}
 	}
 	return values
 }

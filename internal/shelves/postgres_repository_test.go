@@ -3,31 +3,18 @@ package shelves
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
 	"anthology/internal/items"
-	"anthology/internal/platform/migrate"
+	"anthology/internal/platform/testdb"
 	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
 )
 
 // ANTHOLOGY_TEST_DATABASE_URL must name a dedicated, disposable test database.
 func TestPostgresLayoutRemovalPreservesSurvivors(t *testing.T) {
-	dsn := os.Getenv("ANTHOLOGY_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("set ANTHOLOGY_TEST_DATABASE_URL for PostgreSQL regression tests")
-	}
-	db, err := sqlx.Connect("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = db.Close() }()
+	db := testdb.Open(t)
 	ctx := context.Background()
-	if err := migrate.Apply(ctx, db, nil); err != nil {
-		t.Fatal(err)
-	}
 	for _, dimension := range []string{"row", "column"} {
 		for removedIndex := 0; removedIndex < 3; removedIndex++ {
 			t.Run(fmt.Sprintf("%s%d", dimension, removedIndex), func(t *testing.T) {

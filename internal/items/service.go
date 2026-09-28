@@ -48,7 +48,12 @@ func (s *Service) Create(ctx context.Context, input CreateItemInput) (Item, erro
 		return Item{}, err
 	}
 
-	pageCount := normalizePositiveInt(input.PageCount)
+	isbn13, isbn10, pageCount := normalizeBookIdentifiers(
+		input.ItemType,
+		strings.TrimSpace(input.ISBN13),
+		strings.TrimSpace(input.ISBN10),
+		normalizePositiveInt(input.PageCount),
+	)
 	currentPage, err := normalizeCurrentPage(input.CurrentPage)
 	if err != nil {
 		return Item{}, err
@@ -111,8 +116,8 @@ func (s *Service) Create(ctx context.Context, input CreateItemInput) (Item, erro
 		ReleaseYear:    normalizeYear(input.ReleaseYear),
 		PageCount:      pageCount,
 		CurrentPage:    normalizedCurrentPage,
-		ISBN13:         strings.TrimSpace(input.ISBN13),
-		ISBN10:         strings.TrimSpace(input.ISBN10),
+		ISBN13:         isbn13,
+		ISBN10:         isbn10,
 		Description:    strings.TrimSpace(input.Description),
 		CoverImage:     coverImage,
 		Format:         format,
@@ -173,8 +178,8 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, ownerID uuid.UUID, i
 	}
 
 	if input.ItemType != nil {
-		if *input.ItemType == "" {
-			return Item{}, validationErr("itemType is required")
+		if err := validateItemType(*input.ItemType); err != nil {
+			return Item{}, err
 		}
 		existing.ItemType = *input.ItemType
 	}
@@ -265,6 +270,29 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, ownerID uuid.UUID, i
 	if input.TotalVolumes != nil {
 		existing.TotalVolumes = normalizePositiveIntPtrPtr(input.TotalVolumes)
 	}
+
+	// Re-apply type-specific normalization after merging so fields that do
+	// not belong to the (possibly changed) item type are cleared.
+	existing.Format, existing.Genre, existing.Rating, existing.RetailPriceUsd, existing.GoogleVolumeId = normalizeExtendedBookFields(
+		existing.ItemType,
+		existing.Format,
+		existing.Genre,
+		existing.Rating,
+		existing.RetailPriceUsd,
+		existing.GoogleVolumeId,
+	)
+	existing.ISBN13, existing.ISBN10, existing.PageCount = normalizeBookIdentifiers(
+		existing.ItemType,
+		existing.ISBN13,
+		existing.ISBN10,
+		existing.PageCount,
+	)
+	existing.Platform, existing.AgeGroup, existing.PlayerCount = normalizeGameFields(
+		existing.ItemType,
+		existing.Platform,
+		existing.AgeGroup,
+		existing.PlayerCount,
+	)
 
 	// Validate series fields after update
 
@@ -603,6 +631,36 @@ func NormalizeIdentifier(value string) string {
 	return builder.String()
 }
 
+// isbnMatchKey keeps the digits and any X check digit of an ISBN, uppercased,
+// so ISBN-10s ending in X compare correctly. The Postgres repository mirrors
+// this by stripping [^0-9Xx] with regexp_replace and applying upper().
+func isbnMatchKey(value string) string {
+	var builder strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= '0' && r <= '9':
+			builder.WriteRune(r)
+		case r == 'x' || r == 'X':
+			builder.WriteByte('X')
+		}
+	}
+	return builder.String()
+}
+
+// normalizeISBN returns the match key for a scanned ISBN, or "" unless it has
+// the shape of an ISBN-13 (13 digits) or ISBN-10 (9 digits plus a digit or X).
+func normalizeISBN(value string) string {
+	key := isbnMatchKey(value)
+	switch {
+	case len(key) == 13 && !strings.Contains(key, "X"):
+		return key
+	case len(key) == 10 && !strings.Contains(key[:9], "X"):
+		return key
+	default:
+		return ""
+	}
+}
+
 func validationErr(msg string) error {
 	return &ValidationError{Message: msg}
 }
@@ -612,10 +670,18 @@ func validateItemInput(title string, itemType ItemType) error {
 	if title == "" {
 		return validationErr("title is required")
 	}
-	if itemType == "" {
+	return validateItemType(itemType)
+}
+
+func validateItemType(itemType ItemType) error {
+	switch itemType {
+	case ItemTypeBook, ItemTypeGame, ItemTypeMovie, ItemTypeMusic:
+		return nil
+	case "":
 		return validationErr("itemType is required")
+	default:
+		return validationErr("itemType must be one of book, game, movie, or music")
 	}
-	return nil
 }
 
 func compareItemsByCreatedDesc(a, b Item) int {
@@ -772,6 +838,16 @@ func normalizeExtendedBookFields(itemType ItemType, format Format, genre Genre, 
 		return "", "", nil, nil, ""
 	}
 	return normalizeFormat(format), normalizeGenre(genre), normalizeRating(rating), normalizePrice(price), strings.TrimSpace(volumeId)
+}
+
+// normalizeBookIdentifiers clears ISBNs and page count for non-book items.
+// The UI only exposes these fields in the book details section, and shelf
+// barcode scans treat ISBNs as identifying books.
+func normalizeBookIdentifiers(itemType ItemType, isbn13, isbn10 string, pageCount *int) (string, string, *int) {
+	if itemType != ItemTypeBook {
+		return "", "", nil
+	}
+	return isbn13, isbn10, pageCount
 }
 
 // normalizeGameFields normalizes game-specific fields.

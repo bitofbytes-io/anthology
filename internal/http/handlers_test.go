@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 
 	"anthology/internal/auth"
+	"anthology/internal/catalog"
 	"anthology/internal/importer"
 	"anthology/internal/items"
 )
@@ -265,6 +266,14 @@ func (s *exportRepoStub) List(ctx context.Context, opts items.ListOptions) ([]it
 	return itemsCopy, nil
 }
 
+func (s *exportRepoStub) ListByIDs(ctx context.Context, ids []uuid.UUID, ownerID uuid.UUID) ([]items.Item, error) {
+	return nil, nil
+}
+
+func (s *exportRepoStub) FindByISBN(ctx context.Context, isbn string, ownerID uuid.UUID) (items.Item, error) {
+	return items.Item{}, items.ErrNotFound
+}
+
 func (s *exportRepoStub) Update(ctx context.Context, item items.Item) (items.Item, error) {
 	return item, nil
 }
@@ -299,4 +308,56 @@ func (s *exportRepoStub) UpdateSeriesName(ctx context.Context, oldName, newName 
 
 func (s *exportRepoStub) ClearSeriesName(ctx context.Context, seriesName string, ownerID uuid.UUID) (int64, error) {
 	return 0, nil
+}
+
+type slowCatalogStub struct {
+	delay time.Duration
+}
+
+func (s slowCatalogStub) Lookup(ctx context.Context, query string, category catalog.Category) ([]catalog.Metadata, error) {
+	select {
+	case <-time.After(s.delay):
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return []catalog.Metadata{{Title: "Looked Up " + query, ItemType: string(items.ItemTypeBook)}}, nil
+}
+
+func TestItemHandlerImportCSVOutlivesServerWriteTimeout(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	importerSvc := importer.NewCSVImporter(&csvStoreStub{}, slowCatalogStub{delay: 300 * time.Millisecond})
+	handler := NewItemHandler(nil, nil, importerSvc, logger)
+
+	srv := httptest.NewUnstartedServer(newSlogMiddleware(logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler.ImportCSV(w, reqWithUser(r))
+	})))
+	srv.Config.WriteTimeout = 100 * time.Millisecond
+	srv.Start()
+	defer srv.Close()
+
+	req := newMultipartCSVRequest(t, strings.Join([]string{
+		"title,creator,itemType,releaseYear,pageCount,isbn13,isbn10,description,coverImage,notes",
+		",,book,,,9780000000001,,,,",
+	}, "\n"))
+	httpReq, err := http.NewRequest(http.MethodPost, srv.URL+"/api/items/import", req.Body)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	httpReq.Header.Set("Content-Type", req.Header.Get("Content-Type"))
+
+	resp, err := srv.Client().Do(httpReq)
+	if err != nil {
+		t.Fatalf("import response lost after server WriteTimeout: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+	var summary importer.Summary
+	if err := json.NewDecoder(resp.Body).Decode(&summary); err != nil {
+		t.Fatalf("decode summary: %v", err)
+	}
+	if summary.Imported != 1 {
+		t.Fatalf("expected 1 import, got %+v", summary)
+	}
 }

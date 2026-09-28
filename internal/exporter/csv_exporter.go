@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"anthology/internal/items"
@@ -12,12 +13,14 @@ import (
 
 // SchemaVersion identifies the CSV export format version.
 // This version should be incremented when adding new columns or changing the format.
-const SchemaVersion = "1"
+const SchemaVersion = "2"
 
 // csvColumns defines the column order for export. These columns are a superset
 // of the import format to ensure round-trip compatibility.
 // Note: Shelf placement data is intentionally excluded as shelf import is not
 // yet supported. A separate shelf export/import feature will handle that.
+// Cover images stored as data: URIs are also excluded (see exportCoverImage).
+// New columns are appended so existing positional consumers keep working.
 var csvColumns = []string{
 	"schemaVersion",
 	"title",
@@ -43,6 +46,9 @@ var csvColumns = []string{
 	"notes",
 	"createdAt",
 	"updatedAt",
+	"seriesName",
+	"volumeNumber",
+	"totalVolumes",
 }
 
 // CSVExporter exports items to CSV format.
@@ -89,7 +95,7 @@ func (e *CSVExporter) itemToRow(item items.Item) []string {
 	row[7] = item.ISBN13
 	row[8] = item.ISBN10
 	row[9] = item.Description
-	row[10] = item.CoverImage
+	row[10] = exportCoverImage(item.CoverImage)
 	row[11] = string(item.Format)
 	row[12] = string(item.Genre)
 	row[13] = formatOptionalInt(item.Rating)
@@ -103,6 +109,9 @@ func (e *CSVExporter) itemToRow(item items.Item) []string {
 	row[21] = item.Notes
 	row[22] = formatTime(item.CreatedAt)
 	row[23] = formatTime(item.UpdatedAt)
+	row[24] = item.SeriesName
+	row[25] = formatPositiveInt(item.VolumeNumber)
+	row[26] = formatPositiveInt(item.TotalVolumes)
 
 	for i := range row {
 		row[i] = sanitizeCSVCell(row[i])
@@ -111,16 +120,47 @@ func (e *CSVExporter) itemToRow(item items.Item) []string {
 	return row
 }
 
-func sanitizeCSVCell(value string) string {
-	if value == "" {
-		return value
+// exportCoverImage omits covers stored inline as data: URIs. Each can be
+// hundreds of kilobytes, which exceeds spreadsheet cell limits and quickly
+// pushes an export past the CSV import upload limit. URL covers are kept.
+func exportCoverImage(cover string) string {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(cover)), "data:") {
+		return ""
 	}
+	return cover
+}
 
-	switch value[0] {
-	case '=', '+', '-', '@', '\t':
+// sanitizeCSVCell prefixes a single quote to values that spreadsheet software
+// could interpret as a formula. Values that already begin with quotes followed
+// by a formula trigger are escaped too, so UnescapeCSVCell can reverse the
+// transformation exactly.
+func sanitizeCSVCell(value string) string {
+	if needsFormulaEscape(value) {
 		return "'" + value
+	}
+	return value
+}
+
+// UnescapeCSVCell reverses sanitizeCSVCell for values read back during import.
+func UnescapeCSVCell(value string) string {
+	if strings.HasPrefix(value, "'") && needsFormulaEscape(value) {
+		return value[1:]
+	}
+	return value
+}
+
+// needsFormulaEscape reports whether value, ignoring any leading single
+// quotes, begins with a formula trigger character.
+func needsFormulaEscape(value string) bool {
+	rest := strings.TrimLeft(value, "'")
+	if rest == "" {
+		return false
+	}
+	switch rest[0] {
+	case '=', '+', '-', '@', '\t':
+		return true
 	default:
-		return value
+		return false
 	}
 }
 

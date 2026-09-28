@@ -445,7 +445,11 @@ func normalizeSlots(
 }
 
 func (s *Service) attachItems(ctx context.Context, layout ShelfWithLayout, ownerID uuid.UUID) (ShelfWithLayout, error) {
-	itemsList, err := s.itemsRepo.List(ctx, items.ListOptions{OwnerID: ownerID})
+	itemIDs := make([]uuid.UUID, 0, len(layout.Placements))
+	for _, placement := range layout.Placements {
+		itemIDs = append(itemIDs, placement.Placement.ItemID)
+	}
+	itemsList, err := s.itemsRepo.ListByIDs(ctx, itemIDs, ownerID)
 	if err != nil {
 		return ShelfWithLayout{}, err
 	}
@@ -620,17 +624,13 @@ func (s *Service) ScanAndAssign(ctx context.Context, shelfID, slotID uuid.UUID, 
 	}
 
 	// Check if item already exists with this ISBN
-	existingItems, err := s.itemsRepo.List(ctx, items.ListOptions{OwnerID: ownerID})
-	if err != nil {
-		return ScanAndAssignResult{}, err
-	}
-
 	var existingItem *items.Item
-	for _, item := range existingItems {
-		if item.ISBN13 == isbn || item.ISBN10 == isbn {
-			existingItem = &item
-			break
-		}
+	found, err := s.itemsRepo.FindByISBN(ctx, isbn, ownerID)
+	switch {
+	case err == nil:
+		existingItem = &found
+	case !errors.Is(err, items.ErrNotFound):
+		return ScanAndAssignResult{}, err
 	}
 
 	var itemID uuid.UUID

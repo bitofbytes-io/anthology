@@ -273,6 +273,13 @@ type Repository interface {
 	Create(ctx context.Context, item Item) (Item, error)
 	Get(ctx context.Context, id uuid.UUID, ownerID uuid.UUID) (Item, error)
 	List(ctx context.Context, opts ListOptions) ([]Item, error)
+	// ListByIDs returns the owner's items whose IDs are in ids. Unknown IDs and
+	// items belonging to other owners are omitted.
+	ListByIDs(ctx context.Context, ids []uuid.UUID, ownerID uuid.UUID) ([]Item, error)
+	// FindByISBN returns the owner's most recently created book whose ISBN-13
+	// or ISBN-10 matches isbn after normalizeISBN, or ErrNotFound. Inputs that
+	// are not a well-formed ISBN-10 or ISBN-13 never match.
+	FindByISBN(ctx context.Context, isbn string, ownerID uuid.UUID) (Item, error)
 	Update(ctx context.Context, item Item) (Item, error)
 	Delete(ctx context.Context, id uuid.UUID, ownerID uuid.UUID) error
 	Histogram(ctx context.Context, opts HistogramOptions) (LetterHistogram, error)

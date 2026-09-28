@@ -344,3 +344,58 @@ func TestCSVExporter_EscapesFormulaCells(t *testing.T) {
 		t.Errorf("expected formula-escaped notes, got %q", row[21])
 	}
 }
+
+func TestCSVExporter_OmitsDataURICoversAndExportsSeries(t *testing.T) {
+	volume := 2
+	total := 5
+	var buf bytes.Buffer
+	err := NewCSVExporter().Export(&buf, []items.Item{{
+		Title:        "Inline Cover",
+		ItemType:     items.ItemTypeBook,
+		CoverImage:   "data:image/png;base64,iVBORw0KGgo=",
+		SeriesName:   "Saga",
+		VolumeNumber: &volume,
+		TotalVolumes: &total,
+	}})
+	if err != nil {
+		t.Fatalf("export failed: %v", err)
+	}
+	records, err := csv.NewReader(&buf).ReadAll()
+	if err != nil {
+		t.Fatalf("failed to parse CSV: %v", err)
+	}
+	header, row := records[0], records[1]
+	column := func(name string) string {
+		for idx, col := range header {
+			if col == name {
+				return row[idx]
+			}
+		}
+		t.Fatalf("column %q missing from header", name)
+		return ""
+	}
+	if got := column("coverImage"); got != "" {
+		t.Errorf("expected data URI cover to be omitted, got %q", got)
+	}
+	if got := column("seriesName"); got != "Saga" {
+		t.Errorf("expected seriesName Saga, got %q", got)
+	}
+	if got := column("volumeNumber"); got != "2" {
+		t.Errorf("expected volumeNumber 2, got %q", got)
+	}
+	if got := column("totalVolumes"); got != "5" {
+		t.Errorf("expected totalVolumes 5, got %q", got)
+	}
+}
+
+func TestUnescapeCSVCellReversesSanitize(t *testing.T) {
+	values := []string{"", "plain", "'plain", "=1+1", "-dash", "+plus", "@at", "\tTab", "'=quoted", "''-twice", "'", "''"}
+	for _, value := range values {
+		if got := UnescapeCSVCell(sanitizeCSVCell(value)); got != value {
+			t.Errorf("round trip of %q produced %q", value, got)
+		}
+	}
+	if got := UnescapeCSVCell("'plain"); got != "'plain" {
+		t.Errorf("expected apostrophe without formula trigger to be kept, got %q", got)
+	}
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -93,14 +94,31 @@ func main() {
 		MaxHeaderBytes:    http.DefaultMaxHeaderBytes,
 	}
 
+	logger.Info("Anthology API listening", "addr", srv.Addr, "version", version, "revision", revision)
+	if err := serve(ctx, srv, logger); err != nil {
+		logger.Error("http server error", "error", err)
+		os.Exit(1)
+	}
+}
+
+// serve runs srv until it fails or ctx is cancelled. A listener failure (for
+// example, the port already being in use) is returned so the process can exit
+// non-zero instead of idling until a shutdown signal arrives.
+func serve(ctx context.Context, srv *http.Server, logger *slog.Logger) error {
+	serverErr := make(chan error, 1)
 	go func() {
-		logger.Info("Anthology API listening", "addr", srv.Addr, "version", version, "revision", revision)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("http server error", "error", err)
-		}
+		serverErr <- srv.ListenAndServe()
 	}()
 
-	<-ctx.Done()
+	select {
+	case err := <-serverErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+	}
+
 	logger.Info("shutdown signal received")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -109,4 +127,5 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("graceful shutdown failed", "error", err)
 	}
+	return nil
 }

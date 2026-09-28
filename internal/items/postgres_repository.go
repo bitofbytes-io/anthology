@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 )
 
 // PostgresRepository persists items to a Postgres database.
@@ -205,6 +206,52 @@ func (r *PostgresRepository) List(ctx context.Context, opts ListOptions) ([]Item
 		items = append(items, row.toItem())
 	}
 	return items, nil
+}
+
+// ListByIDs returns the owner's items with the given IDs.
+func (r *PostgresRepository) ListByIDs(ctx context.Context, ids []uuid.UUID, ownerID uuid.UUID) ([]Item, error) {
+	if len(ids) == 0 {
+		return []Item{}, nil
+	}
+
+	rows := []itemRow{}
+	query := baseSelect + " WHERE i.id = ANY($1) AND i.owner_id = $2 ORDER BY i.created_at DESC, i.title ASC"
+	if err := r.db.SelectContext(ctx, &rows, query, pq.Array(ids), ownerID); err != nil {
+		return nil, fmt.Errorf("list items by id: %w", err)
+	}
+
+	items := make([]Item, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, row.toItem())
+	}
+	return items, nil
+}
+
+// FindByISBN returns the owner's most recently created book matching isbn
+// against either ISBN column (see normalizeISBN and isbnMatchKey).
+//
+// The per-row regexp_replace is not index-backed, but the owner_id predicate
+// uses idx_items_owner_id, so the scan is bounded by one personal library.
+func (r *PostgresRepository) FindByISBN(ctx context.Context, isbn string, ownerID uuid.UUID) (Item, error) {
+	normalized := normalizeISBN(isbn)
+	if normalized == "" {
+		return Item{}, ErrNotFound
+	}
+
+	query := baseSelect + ` WHERE i.owner_id = $1
+  AND i.item_type = 'book'
+  AND (upper(regexp_replace(i.isbn_13, '[^0-9Xx]', '', 'g')) = $2 OR upper(regexp_replace(i.isbn_10, '[^0-9Xx]', '', 'g')) = $2)
+ORDER BY i.created_at DESC, i.title ASC
+LIMIT 1`
+
+	var row itemRow
+	if err := r.db.GetContext(ctx, &row, query, ownerID, normalized); err != nil {
+		if err == sql.ErrNoRows {
+			return Item{}, ErrNotFound
+		}
+		return Item{}, fmt.Errorf("find item by isbn: %w", err)
+	}
+	return row.toItem(), nil
 }
 
 // Update modifies an existing row.
