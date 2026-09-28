@@ -49,6 +49,8 @@ type FailedRecord struct {
 
 var ErrInvalidCSV = errors.New("invalid csv upload")
 
+var errMetadataLookupFailed = errors.New("metadata lookup failed; add a title to this row or try again later")
+
 // MaxImportRows limits the number of data rows processed per CSV import to
 // prevent excessive memory usage and long-running requests.
 const MaxImportRows = 1000
@@ -354,7 +356,9 @@ func (i *CSVImporter) lookupBook(ctx context.Context, query string) (catalog.Met
 		if errors.Is(err, catalog.ErrInvalidQuery) {
 			return catalog.Metadata{}, fmt.Errorf("ISBN/UPC %s is not valid", query)
 		}
-		return catalog.Metadata{}, err
+		// Unexpected lookup failures can carry upstream transport details, so
+		// report a generic message instead of returning them to the browser.
+		return catalog.Metadata{}, errMetadataLookupFailed
 	}
 	if len(metadata) == 0 {
 		return catalog.Metadata{}, fmt.Errorf("no metadata found for %s", query)

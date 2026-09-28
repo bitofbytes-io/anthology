@@ -242,22 +242,9 @@ func (s *Service) LookupByVolumeID(ctx context.Context, volumeID string) (Metada
 		return Metadata{}, fmt.Errorf("build google books url: %w", err)
 	}
 
-	values := url.Values{}
-	if s.apiKey != "" {
-		values.Set("key", s.apiKey)
-	}
-	if len(values) > 0 {
-		endpoint.RawQuery = values.Encode()
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	resp, err := s.doGoogleBooksRequest(ctx, endpoint)
 	if err != nil {
-		return Metadata{}, fmt.Errorf("create google books request: %w", err)
-	}
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return Metadata{}, fmt.Errorf("call google books: %w", err)
+		return Metadata{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -289,19 +276,11 @@ func (s *Service) searchGoogleBooks(ctx context.Context, q string, maxResults in
 	}
 	values.Set("printType", "books")
 	values.Set("orderBy", "relevance")
-	if s.apiKey != "" {
-		values.Set("key", s.apiKey)
-	}
 	endpoint.RawQuery = values.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	resp, err := s.doGoogleBooksRequest(ctx, endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("create google books request: %w", err)
-	}
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("call google books: %w", err)
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -315,6 +294,31 @@ func (s *Service) searchGoogleBooks(ctx context.Context, q string, maxResults in
 	}
 
 	return payload.Items, nil
+}
+
+// doGoogleBooksRequest issues a GET request to Google Books. The API key is sent
+// in the X-Goog-Api-Key header rather than the query string so it never appears
+// in request URLs, which net/http embeds in *url.Error messages.
+func (s *Service) doGoogleBooksRequest(ctx context.Context, endpoint *url.URL) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("create google books request: %w", err)
+	}
+	if s.apiKey != "" {
+		req.Header.Set("X-Goog-Api-Key", s.apiKey)
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		// Drop the *url.Error wrapper so the request URL (including the
+		// caller's query) is not propagated into logs or API responses.
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			err = urlErr.Err
+		}
+		return nil, fmt.Errorf("call google books: %w", err)
+	}
+	return resp, nil
 }
 
 func (s *Service) metadataFromVolume(volume googleVolume) (Metadata, error) {

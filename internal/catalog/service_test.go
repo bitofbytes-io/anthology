@@ -7,6 +7,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -23,8 +25,11 @@ func TestLookupBookByQueryReturnsMetadata(t *testing.T) {
 		if got := values.Get("maxResults"); got != "5" {
 			t.Fatalf("expected maxResults=5, got %s", got)
 		}
-		if got := values.Get("key"); got != "test-key" {
-			t.Fatalf("expected key query param to be set, got %s", got)
+		if values.Has("key") {
+			t.Fatalf("expected API key to be omitted from the query string, got %s", r.URL.RawQuery)
+		}
+		if got := r.Header.Get("X-Goog-Api-Key"); got != "test-key" {
+			t.Fatalf("expected X-Goog-Api-Key header to be set, got %q", got)
 		}
 
 		resp := googleBooksResponse{
@@ -228,6 +233,44 @@ func TestLookupBookByQueryReturnsNotFoundWhenEmpty(t *testing.T) {
 	_, err := svc.Lookup(context.Background(), "unknown", CategoryBook)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestGoogleBooksAPIKeyNeverAppearsInURLOrErrors(t *testing.T) {
+	t.Parallel()
+	const secret = "super-secret-key"
+	var seenURLs []string
+	client := newTestClient(t, func(r *http.Request) (*http.Response, error) {
+		seenURLs = append(seenURLs, r.URL.String())
+		return nil, errors.New("connection refused")
+	})
+	svc := NewService(client, WithGoogleBooksBaseURL("http://example.test"), WithGoogleBooksAPIKey(secret))
+
+	_, lookupErr := svc.Lookup(context.Background(), "example keywords", CategoryBook)
+	if lookupErr == nil {
+		t.Fatal("expected lookup error")
+	}
+	_, volumeErr := svc.LookupByVolumeID(context.Background(), "vol-1")
+	if volumeErr == nil {
+		t.Fatal("expected volume lookup error")
+	}
+
+	for _, err := range []error{lookupErr, volumeErr} {
+		if strings.Contains(err.Error(), secret) {
+			t.Fatalf("error leaks API key: %v", err)
+		}
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			t.Fatalf("expected *url.Error to be unwrapped, got %v", err)
+		}
+	}
+	if len(seenURLs) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(seenURLs))
+	}
+	for _, u := range seenURLs {
+		if strings.Contains(u, secret) {
+			t.Fatalf("request URL leaks API key: %s", u)
+		}
 	}
 }
 

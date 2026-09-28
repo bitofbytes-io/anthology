@@ -194,3 +194,26 @@ func TestCSVImporter_ImportsExtendedFields(t *testing.T) {
 		t.Fatalf("expected updatedAt to be %s", updatedAt.Format(time.RFC3339))
 	}
 }
+
+func TestCSVImporter_LookupFailureDoesNotLeakUpstreamError(t *testing.T) {
+	store := &stubStore{}
+	upstream := fmt.Errorf("call google books: Get \"https://www.googleapis.com/books/v1/volumes?key=secret-key\": dial tcp: timeout")
+	importer := NewCSVImporter(store, &stubCatalog{err: upstream})
+	csv := "title,creator,itemType,releaseYear,pageCount,isbn13,isbn10,description,coverImage,notes\n" +
+		",,book,,,9780000000000,,,,\n"
+
+	summary, err := importer.Import(context.Background(), strings.NewReader(csv), testOwnerID)
+	if err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+	if len(summary.Failed) != 1 {
+		t.Fatalf("expected 1 failed record, got %d", len(summary.Failed))
+	}
+	message := summary.Failed[0].Error
+	if strings.Contains(message, "secret-key") || strings.Contains(message, "googleapis") {
+		t.Fatalf("failed record leaks upstream error: %q", message)
+	}
+	if message != errMetadataLookupFailed.Error() {
+		t.Fatalf("expected generic lookup failure message, got %q", message)
+	}
+}
