@@ -173,8 +173,8 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, ownerID uuid.UUID, i
 	}
 
 	if input.ItemType != nil {
-		if *input.ItemType == "" {
-			return Item{}, validationErr("itemType is required")
+		if err := validateItemType(*input.ItemType); err != nil {
+			return Item{}, err
 		}
 		existing.ItemType = *input.ItemType
 	}
@@ -265,6 +265,23 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, ownerID uuid.UUID, i
 	if input.TotalVolumes != nil {
 		existing.TotalVolumes = normalizePositiveIntPtrPtr(input.TotalVolumes)
 	}
+
+	// Re-apply type-specific normalization after merging so fields that do
+	// not belong to the (possibly changed) item type are cleared.
+	existing.Format, existing.Genre, existing.Rating, existing.RetailPriceUsd, existing.GoogleVolumeId = normalizeExtendedBookFields(
+		existing.ItemType,
+		existing.Format,
+		existing.Genre,
+		existing.Rating,
+		existing.RetailPriceUsd,
+		existing.GoogleVolumeId,
+	)
+	existing.Platform, existing.AgeGroup, existing.PlayerCount = normalizeGameFields(
+		existing.ItemType,
+		existing.Platform,
+		existing.AgeGroup,
+		existing.PlayerCount,
+	)
 
 	// Validate series fields after update
 
@@ -612,10 +629,18 @@ func validateItemInput(title string, itemType ItemType) error {
 	if title == "" {
 		return validationErr("title is required")
 	}
-	if itemType == "" {
+	return validateItemType(itemType)
+}
+
+func validateItemType(itemType ItemType) error {
+	switch itemType {
+	case ItemTypeBook, ItemTypeGame, ItemTypeMovie, ItemTypeMusic:
+		return nil
+	case "":
 		return validationErr("itemType is required")
+	default:
+		return validationErr("itemType must be one of book, game, movie, or music")
 	}
-	return nil
 }
 
 func compareItemsByCreatedDesc(a, b Item) int {

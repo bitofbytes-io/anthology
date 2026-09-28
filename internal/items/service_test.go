@@ -504,6 +504,77 @@ func TestServiceUpdateRejectsBlankTitleOrItemType(t *testing.T) {
 	}
 }
 
+func TestServiceRejectsUnknownItemType(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(NewInMemoryRepository(nil))
+
+	_, err := svc.Create(ctx, CreateItemInput{OwnerID: testOwnerID, Title: "Mystery", ItemType: ItemType("comic")})
+	var validation *ValidationError
+	if !errors.As(err, &validation) || !strings.Contains(err.Error(), "itemType must be one of") {
+		t.Fatalf("expected itemType validation error on create, got %v", err)
+	}
+
+	item, err := svc.Create(ctx, CreateItemInput{OwnerID: testOwnerID, Title: "Known", ItemType: ItemTypeBook})
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	unknown := ItemType("Book")
+	_, err = svc.Update(ctx, item.ID, testOwnerID, UpdateItemInput{ItemType: &unknown})
+	if !errors.As(err, &validation) || !strings.Contains(err.Error(), "itemType must be one of") {
+		t.Fatalf("expected itemType validation error on update, got %v", err)
+	}
+	stored, err := svc.Get(ctx, item.ID, testOwnerID)
+	if err != nil {
+		t.Fatalf("get failed: %v", err)
+	}
+	if stored.ItemType != ItemTypeBook {
+		t.Fatalf("expected item type to remain book, got %q", stored.ItemType)
+	}
+}
+
+func TestServiceUpdateChangingTypeClearsFieldsForOtherTypes(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(NewInMemoryRepository(nil))
+	rating := 7
+	price := 12.5
+
+	book, err := svc.Create(ctx, CreateItemInput{
+		OwnerID:        testOwnerID,
+		Title:          "Book Then Game",
+		ItemType:       ItemTypeBook,
+		Format:         FormatPaperback,
+		Genre:          GenreFiction,
+		Rating:         &rating,
+		RetailPriceUsd: &price,
+		GoogleVolumeId: "vol-1",
+	})
+	if err != nil {
+		t.Fatalf("create book failed: %v", err)
+	}
+
+	gameType := ItemTypeGame
+	platform := "Switch"
+	game, err := svc.Update(ctx, book.ID, testOwnerID, UpdateItemInput{ItemType: &gameType, Platform: &platform})
+	if err != nil {
+		t.Fatalf("update to game failed: %v", err)
+	}
+	if game.Format != "" || game.Genre != "" || game.Rating != nil || game.RetailPriceUsd != nil || game.GoogleVolumeId != "" {
+		t.Fatalf("expected book-only fields to be cleared, got %+v", game)
+	}
+	if game.Platform != "Switch" {
+		t.Fatalf("expected platform to be kept for game, got %q", game.Platform)
+	}
+
+	movieType := ItemTypeMovie
+	movie, err := svc.Update(ctx, book.ID, testOwnerID, UpdateItemInput{ItemType: &movieType})
+	if err != nil {
+		t.Fatalf("update to movie failed: %v", err)
+	}
+	if movie.Platform != "" || movie.AgeGroup != "" || movie.PlayerCount != "" {
+		t.Fatalf("expected game-only fields to be cleared, got %+v", movie)
+	}
+}
+
 func TestServiceRejectsOversizedCoverImage(t *testing.T) {
 	repo := NewInMemoryRepository(nil)
 	svc := NewService(repo)
