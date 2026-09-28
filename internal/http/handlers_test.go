@@ -266,6 +266,14 @@ func (s *exportRepoStub) List(ctx context.Context, opts items.ListOptions) ([]it
 	return itemsCopy, nil
 }
 
+func (s *exportRepoStub) ListByIDs(ctx context.Context, ids []uuid.UUID, ownerID uuid.UUID) ([]items.Item, error) {
+	return nil, nil
+}
+
+func (s *exportRepoStub) FindByISBN(ctx context.Context, isbn string, ownerID uuid.UUID) (items.Item, error) {
+	return items.Item{}, items.ErrNotFound
+}
+
 func (s *exportRepoStub) Update(ctx context.Context, item items.Item) (items.Item, error) {
 	return item, nil
 }

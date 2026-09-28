@@ -734,6 +734,18 @@ func (r *seriesUpdateRepo) List(context.Context, ListOptions) ([]Item, error) {
 	return nil, nil
 }
 
+func (r *seriesUpdateRepo) ListByIDs(context.Context, []uuid.UUID, uuid.UUID) ([]Item, error) {
+	r.t.Helper()
+	r.t.Fatalf("unexpected ListByIDs call")
+	return nil, nil
+}
+
+func (r *seriesUpdateRepo) FindByISBN(context.Context, string, uuid.UUID) (Item, error) {
+	r.t.Helper()
+	r.t.Fatalf("unexpected FindByISBN call")
+	return Item{}, nil
+}
+
 func (r *seriesUpdateRepo) Update(context.Context, Item) (Item, error) {
 	r.t.Helper()
 	r.t.Fatalf("unexpected Update call")
