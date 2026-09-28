@@ -18,13 +18,17 @@ import (
 	"anthology/internal/shelves"
 )
 
+// requestTimeout bounds how long any handler may run before its context is
+// cancelled and chi responds with 504 Gateway Timeout.
+const requestTimeout = 60 * time.Second
+
 // NewRouter wires application routes and middleware using chi.
 func NewRouter(cfg config.Config, svc *items.Service, catalogSvc *catalog.Service, shelfSvc *shelves.Service, authService *auth.Service, googleAuth *auth.GoogleAuthenticator, logger *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(middleware.Timeout(requestTimeout))
 	r.Use(newSecurityHeadersMiddleware(cfg.Environment))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.AllowedOrigins,

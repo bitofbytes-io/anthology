@@ -427,6 +427,12 @@ func (h *ItemHandler) Resync(w http.ResponseWriter, r *http.Request) {
 
 const maxCSVUploadBytes int64 = 5 << 20
 
+// csvImportWriteDeadline replaces the server-wide WriteTimeout for CSV imports.
+// Imports can spend most of requestTimeout on metadata lookups (bounded by
+// importer.LookupBudget), so the write deadline must outlast the request
+// context or the summary is lost after rows have already been committed.
+const csvImportWriteDeadline = requestTimeout + 30*time.Second
+
 // Duplicates checks for potential duplicate items by title or identifier.
 func (h *ItemHandler) Duplicates(w http.ResponseWriter, r *http.Request) {
 	user := UserFromContext(r.Context())
@@ -517,6 +523,10 @@ func (h *ItemHandler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 	if h.importer == nil {
 		writeError(w, http.StatusNotImplemented, "CSV import is not available")
 		return
+	}
+
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(csvImportWriteDeadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		h.logger.Warn("extend csv import write deadline", "error", err)
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxCSVUploadBytes)

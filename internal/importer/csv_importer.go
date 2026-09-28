@@ -51,6 +51,8 @@ var ErrInvalidCSV = errors.New("invalid csv upload")
 
 var errMetadataLookupFailed = errors.New("metadata lookup failed; add a title to this row or try again later")
 
+var errLookupBudgetExhausted = errors.New("metadata lookup skipped: this import ran out of time for ISBN lookups; add a title to this row or import it in a smaller file")
+
 // MaxImportRows limits the number of data rows processed per CSV import to
 // prevent excessive memory usage and long-running requests.
 const MaxImportRows = 1000
@@ -58,6 +60,16 @@ const MaxImportRows = 1000
 // MaxFailedRecords caps the number of failed/skipped records stored in the
 // summary to avoid unbounded memory growth from malformed uploads.
 const MaxFailedRecords = 100
+
+// MaxLookupsPerImport caps the number of catalog lookups (rows that need
+// metadata because they have an ISBN but no title) performed per import.
+// Rows beyond the cap are reported as failed.
+const MaxLookupsPerImport = 100
+
+// LookupBudget bounds the total time an import may spend on catalog lookups so
+// the request completes within the HTTP server's request timeout. Rows that
+// still need a lookup once the budget is spent are reported as failed.
+const LookupBudget = 30 * time.Second
 
 var requiredColumns = []string{
 	"title",
@@ -73,12 +85,26 @@ var requiredColumns = []string{
 }
 
 type CSVImporter struct {
-	items   ItemStore
-	catalog CatalogLookup
+	items        ItemStore
+	catalog      CatalogLookup
+	maxLookups   int
+	lookupBudget time.Duration
 }
 
 func NewCSVImporter(items ItemStore, catalog CatalogLookup) *CSVImporter {
-	return &CSVImporter{items: items, catalog: catalog}
+	return &CSVImporter{
+		items:        items,
+		catalog:      catalog,
+		maxLookups:   MaxLookupsPerImport,
+		lookupBudget: LookupBudget,
+	}
+}
+
+// lookupAllowance tracks how many catalog lookups and how much lookup time
+// remain for a single import.
+type lookupAllowance struct {
+	ctx       context.Context
+	remaining int
 }
 
 func (i *CSVImporter) Import(ctx context.Context, reader io.Reader, ownerID uuid.UUID) (Summary, error) {
@@ -146,9 +172,13 @@ func (i *CSVImporter) Import(ctx context.Context, reader io.Reader, ownerID uuid
 
 	summary := Summary{TotalRows: totalRows}
 
+	lookupCtx, cancelLookups := context.WithTimeout(ctx, i.lookupBudget)
+	defer cancelLookups()
+	allowance := &lookupAllowance{ctx: lookupCtx, remaining: i.maxLookups}
+
 	for _, row := range rows {
 		values := row.values
-		input, meta, rowErr := i.buildInput(ctx, values, ownerID)
+		input, meta, rowErr := i.buildInput(allowance, values, ownerID)
 		if rowErr != nil {
 			if len(summary.Failed) < MaxFailedRecords {
 				summary.Failed = append(summary.Failed, FailedRecord{
@@ -203,7 +233,7 @@ type rowMeta struct {
 	identifier string
 }
 
-func (i *CSVImporter) buildInput(ctx context.Context, values map[string]string, ownerID uuid.UUID) (items.CreateItemInput, rowMeta, error) {
+func (i *CSVImporter) buildInput(lookups *lookupAllowance, values map[string]string, ownerID uuid.UUID) (items.CreateItemInput, rowMeta, error) {
 	meta := rowMeta{}
 
 	rawType := strings.ToLower(values["itemtype"])
@@ -279,7 +309,7 @@ func (i *CSVImporter) buildInput(ctx context.Context, values map[string]string, 
 		if identifier == "" {
 			return items.CreateItemInput{}, meta, fmt.Errorf("provide a title or ISBN/UPC for books")
 		}
-		metadata, err := i.lookupBook(ctx, identifier)
+		metadata, err := i.lookupBook(lookups, identifier)
 		if err != nil {
 			return items.CreateItemInput{}, meta, err
 		}
@@ -343,13 +373,23 @@ func (i *CSVImporter) buildInput(ctx context.Context, values map[string]string, 
 	}, meta, nil
 }
 
-func (i *CSVImporter) lookupBook(ctx context.Context, query string) (catalog.Metadata, error) {
+func (i *CSVImporter) lookupBook(lookups *lookupAllowance, query string) (catalog.Metadata, error) {
 	if i.catalog == nil {
 		return catalog.Metadata{}, fmt.Errorf("%w: metadata lookup is unavailable", ErrInvalidCSV)
 	}
+	if lookups.remaining <= 0 {
+		return catalog.Metadata{}, fmt.Errorf("metadata lookup skipped: this import reached its limit of %d ISBN lookups; add a title to this row or import it in a smaller file", i.maxLookups)
+	}
+	if lookups.ctx.Err() != nil {
+		return catalog.Metadata{}, errLookupBudgetExhausted
+	}
+	lookups.remaining--
 
-	metadata, err := i.catalog.Lookup(ctx, query, catalog.CategoryBook)
+	metadata, err := i.catalog.Lookup(lookups.ctx, query, catalog.CategoryBook)
 	if err != nil {
+		if lookups.ctx.Err() != nil {
+			return catalog.Metadata{}, errLookupBudgetExhausted
+		}
 		if errors.Is(err, catalog.ErrNotFound) {
 			return catalog.Metadata{}, fmt.Errorf("no metadata found for %s", query)
 		}

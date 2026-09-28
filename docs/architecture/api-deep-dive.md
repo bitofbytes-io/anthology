@@ -157,6 +157,7 @@ CSV importer:
 * Empty rows skipped; per-row errors reported in `failed`.
 * Duplicate detection across title/ISBN13/ISBN10 using existing catalog + rows processed in-session.
 * Book rows with missing title but ISBN/UPC will call catalog lookup to backfill metadata; otherwise title is required.
+* Lookups are capped at 100 per import and share a 30s time budget; rows beyond either limit are reported in `failed` and can be re-imported with a title or in a smaller file.
 * Upload capped at 5 MiB (HTTP handler).
 
 Catalog lookup:
@@ -258,7 +259,7 @@ sequenceDiagram
 ## Operational notes
 
 * CORS defaults: `http://localhost:4200,http://localhost:8080`; override via `ALLOWED_ORIGINS`.
-* Timeouts: Request timeout middleware 60s; HTTP server read/write 15s, idle 60s.
+* Timeouts: Request timeout middleware 60s; HTTP server read/write 15s, idle 60s. CSV import extends its write deadline to 90s so the summary outlives the request timeout.
 * Logging: `slog` text handler; HTTP middleware logs method/path/status/duration.
 * CSV upload size guard at handler level; JSON max 1 MiB.
 * Postgres is required; local dev should point at a local database.

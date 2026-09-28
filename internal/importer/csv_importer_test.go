@@ -217,3 +217,82 @@ func TestCSVImporter_LookupFailureDoesNotLeakUpstreamError(t *testing.T) {
 		t.Fatalf("expected generic lookup failure message, got %q", message)
 	}
 }
+
+type countingCatalog struct {
+	calls int
+	block bool
+}
+
+func (c *countingCatalog) Lookup(ctx context.Context, query string, category catalog.Category) ([]catalog.Metadata, error) {
+	c.calls++
+	if c.block {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return []catalog.Metadata{{Title: "Title " + query, ItemType: string(items.ItemTypeBook)}}, nil
+}
+
+func titleLessRows(n int) string {
+	var builder strings.Builder
+	builder.WriteString("title,creator,itemType,releaseYear,pageCount,isbn13,isbn10,description,coverImage,notes\n")
+	for idx := 0; idx < n; idx++ {
+		fmt.Fprintf(&builder, ",,book,,,978%010d,,,,\n", idx)
+	}
+	return builder.String()
+}
+
+func TestCSVImporter_CapsCatalogLookupsPerImport(t *testing.T) {
+	store := &stubStore{}
+	lookups := &countingCatalog{}
+	importer := NewCSVImporter(store, lookups)
+
+	summary, err := importer.Import(context.Background(), strings.NewReader(titleLessRows(MaxLookupsPerImport+3)), testOwnerID)
+	if err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+	if lookups.calls != MaxLookupsPerImport {
+		t.Fatalf("expected %d lookups, got %d", MaxLookupsPerImport, lookups.calls)
+	}
+	if summary.Imported != MaxLookupsPerImport {
+		t.Fatalf("expected %d imports, got %d", MaxLookupsPerImport, summary.Imported)
+	}
+	if len(summary.Failed) != 3 {
+		t.Fatalf("expected 3 failed rows, got %d", len(summary.Failed))
+	}
+	for _, failed := range summary.Failed {
+		if !strings.Contains(failed.Error, "limit of 100 ISBN lookups") {
+			t.Fatalf("unexpected failure message: %q", failed.Error)
+		}
+	}
+}
+
+func TestCSVImporter_StopsLookupsWhenTimeBudgetIsSpent(t *testing.T) {
+	store := &stubStore{}
+	lookups := &countingCatalog{block: true}
+	importer := NewCSVImporter(store, lookups)
+	importer.lookupBudget = 20 * time.Millisecond
+
+	csv := "title,creator,itemType,releaseYear,pageCount,isbn13,isbn10,description,coverImage,notes\n" +
+		",,book,,,9780000000001,,,,\n" +
+		",,book,,,9780000000002,,,,\n" +
+		"Titled Book,Author,book,,,,,,,\n"
+
+	summary, err := importer.Import(context.Background(), strings.NewReader(csv), testOwnerID)
+	if err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+	if lookups.calls != 1 {
+		t.Fatalf("expected a single lookup before the budget ran out, got %d", lookups.calls)
+	}
+	if summary.Imported != 1 {
+		t.Fatalf("expected titled row to import, got %d", summary.Imported)
+	}
+	if len(summary.Failed) != 2 {
+		t.Fatalf("expected 2 failed rows, got %d", len(summary.Failed))
+	}
+	for _, failed := range summary.Failed {
+		if failed.Error != errLookupBudgetExhausted.Error() {
+			t.Fatalf("unexpected failure message: %q", failed.Error)
+		}
+	}
+}
