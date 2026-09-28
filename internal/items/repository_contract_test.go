@@ -18,13 +18,13 @@ func assertTargetedLookups(t *testing.T, repo Repository, ownerA, ownerB uuid.UU
 	ctx := context.Background()
 	base := time.Now().UTC().Truncate(time.Second)
 
-	create := func(owner uuid.UUID, title, isbn13, isbn10 string, offset time.Duration) Item {
+	createTyped := func(owner uuid.UUID, itemType ItemType, title, isbn13, isbn10 string, offset time.Duration) Item {
 		t.Helper()
 		item, err := repo.Create(ctx, Item{
 			ID:            uuid.New(),
 			OwnerID:       owner,
 			Title:         title,
-			ItemType:      ItemTypeBook,
+			ItemType:      itemType,
 			ISBN13:        isbn13,
 			ISBN10:        isbn10,
 			ReadingStatus: BookStatusNone,
@@ -36,11 +36,19 @@ func assertTargetedLookups(t *testing.T, repo Repository, ownerA, ownerB uuid.UU
 		}
 		return item
 	}
+	create := func(owner uuid.UUID, title, isbn13, isbn10 string, offset time.Duration) Item {
+		t.Helper()
+		return createTyped(owner, ItemTypeBook, title, isbn13, isbn10, offset)
+	}
 
 	older := create(ownerA, "Older", "978-0-00-000000-1", "", 0)
 	newer := create(ownerA, "Newer", "9780000000001", "", time.Minute)
 	isbn10Only := create(ownerA, "ISBN-10 Only", "", "0-00-000000-2", 2*time.Minute)
 	foreign := create(ownerB, "Foreign", "9780000000009", "", 3*time.Minute)
+	checkDigitX := create(ownerA, "Check Digit X", "", "0-8044-2957-X", 4*time.Minute)
+	// Written straight to the repository, bypassing service normalization, to
+	// model a legacy non-book row that still carries an ISBN.
+	createTyped(ownerA, ItemTypeMovie, "Legacy Movie", "9780000000017", "", 5*time.Minute)
 
 	listed, err := repo.ListByIDs(ctx, []uuid.UUID{older.ID, isbn10Only.ID, foreign.ID, uuid.New()}, ownerA)
 	if err != nil {
@@ -74,7 +82,14 @@ func assertTargetedLookups(t *testing.T, repo Repository, ownerA, ownerB uuid.UU
 	if err != nil || found.ID != foreign.ID {
 		t.Fatalf("FindByISBN for owner B = %s, %v; want %s", found.ID, err, foreign.ID)
 	}
-	for _, blank := range []string{"", "not-an-isbn"} {
+	found, err = repo.FindByISBN(ctx, "080442957x", ownerA)
+	if err != nil || found.ID != checkDigitX.ID {
+		t.Fatalf("FindByISBN with X check digit = %s, %v; want %s", found.ID, err, checkDigitX.ID)
+	}
+	if _, err := repo.FindByISBN(ctx, "9780000000017", ownerA); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("FindByISBN matched a non-book: %v", err)
+	}
+	for _, blank := range []string{"", "not-an-isbn", "080442957", "97800000000", "08044X2957"} {
 		if _, err := repo.FindByISBN(ctx, blank, ownerA); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("FindByISBN(%q) = %v; want ErrNotFound", blank, err)
 		}

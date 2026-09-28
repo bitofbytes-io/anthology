@@ -22,13 +22,40 @@ import (
 // cancelled and chi responds with 504 Gateway Timeout.
 const requestTimeout = 60 * time.Second
 
+// csvImportPath is the CSV import route, which gets csvImportTimeout instead of
+// requestTimeout.
+const csvImportPath = "/api/items/import"
+
+// csvImportTimeout bounds a CSV import request. It covers the upload (bounded by
+// the server's 15s ReadTimeout), the importer's 30s lookup budget
+// (importer.LookupBudget), and up to 1000 row inserts, with headroom. The
+// import write deadline (csvImportWriteDeadline) is longer still, so the
+// summary can be written even when the import is cut short.
+const csvImportTimeout = 75 * time.Second
+
+// newRequestTimeoutMiddleware applies chi's Timeout middleware, giving CSV
+// imports csvImportTimeout and every other request requestTimeout.
+func newRequestTimeoutMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		standard := middleware.Timeout(requestTimeout)(next)
+		csvImport := middleware.Timeout(csvImportTimeout)(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost && r.URL.Path == csvImportPath {
+				csvImport.ServeHTTP(w, r)
+				return
+			}
+			standard.ServeHTTP(w, r)
+		})
+	}
+}
+
 // NewRouter wires application routes and middleware using chi.
 func NewRouter(cfg config.Config, svc *items.Service, catalogSvc *catalog.Service, shelfSvc *shelves.Service, authService *auth.Service, googleAuth *auth.GoogleAuthenticator, logger *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(requestTimeout))
+	r.Use(newRequestTimeoutMiddleware())
 	r.Use(newSecurityHeadersMiddleware(cfg.Environment))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.AllowedOrigins,

@@ -174,13 +174,13 @@ func (r *InMemoryRepository) ListByIDs(_ context.Context, ids []uuid.UUID, owner
 	return items, nil
 }
 
-// FindByISBN returns the owner's most recently created item matching isbn
-// against either ISBN field, using the same normalization as FindDuplicates.
+// FindByISBN returns the owner's most recently created book matching isbn
+// against either ISBN field (see normalizeISBN and isbnMatchKey).
 func (r *InMemoryRepository) FindByISBN(_ context.Context, isbn string, ownerID uuid.UUID) (Item, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	normalized := NormalizeIdentifier(isbn)
+	normalized := normalizeISBN(isbn)
 	if normalized == "" {
 		return Item{}, ErrNotFound
 	}
@@ -191,10 +191,10 @@ func (r *InMemoryRepository) FindByISBN(_ context.Context, isbn string, ownerID 
 	)
 	for _, id := range r.order {
 		item, ok := r.data[id]
-		if !ok || item.OwnerID != ownerID {
+		if !ok || item.OwnerID != ownerID || item.ItemType != ItemTypeBook {
 			continue
 		}
-		if NormalizeIdentifier(item.ISBN13) != normalized && NormalizeIdentifier(item.ISBN10) != normalized {
+		if isbnMatchKey(item.ISBN13) != normalized && isbnMatchKey(item.ISBN10) != normalized {
 			continue
 		}
 		if !found || compareItemsByCreatedDesc(item, match) < 0 {

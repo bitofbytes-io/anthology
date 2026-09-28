@@ -227,16 +227,20 @@ func (r *PostgresRepository) ListByIDs(ctx context.Context, ids []uuid.UUID, own
 	return items, nil
 }
 
-// FindByISBN returns the owner's most recently created item matching isbn
-// against either ISBN column, using the same normalization as FindDuplicates.
+// FindByISBN returns the owner's most recently created book matching isbn
+// against either ISBN column (see normalizeISBN and isbnMatchKey).
+//
+// The per-row regexp_replace is not index-backed, but the owner_id predicate
+// uses idx_items_owner_id, so the scan is bounded by one personal library.
 func (r *PostgresRepository) FindByISBN(ctx context.Context, isbn string, ownerID uuid.UUID) (Item, error) {
-	normalized := NormalizeIdentifier(isbn)
+	normalized := normalizeISBN(isbn)
 	if normalized == "" {
 		return Item{}, ErrNotFound
 	}
 
 	query := baseSelect + ` WHERE i.owner_id = $1
-  AND (regexp_replace(i.isbn_13, '[^0-9]', '', 'g') = $2 OR regexp_replace(i.isbn_10, '[^0-9]', '', 'g') = $2)
+  AND i.item_type = 'book'
+  AND (upper(regexp_replace(i.isbn_13, '[^0-9Xx]', '', 'g')) = $2 OR upper(regexp_replace(i.isbn_10, '[^0-9Xx]', '', 'g')) = $2)
 ORDER BY i.created_at DESC, i.title ASC
 LIMIT 1`
 

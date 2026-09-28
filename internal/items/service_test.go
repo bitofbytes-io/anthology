@@ -145,14 +145,14 @@ func TestServiceUpdate(t *testing.T) {
 	repo := NewInMemoryRepository(nil)
 	svc := NewService(repo)
 
-	created, err := svc.Create(context.Background(), CreateItemInput{OwnerID: testOwnerID, Title: "Initial", ItemType: ItemTypeGame})
+	created, err := svc.Create(context.Background(), CreateItemInput{OwnerID: testOwnerID, Title: "Initial", ItemType: ItemTypeBook})
 	if err != nil {
 		t.Fatalf("create failed: %v", err)
 	}
 
 	title := "Updated"
 	notes := "Now includes expansion content"
-	itemType := ItemTypeGame
+	itemType := ItemTypeBook
 	newDescription := "Updated overview"
 	isbn13 := "9781984801265"
 	isbn10 := "1984801263"
@@ -572,6 +572,37 @@ func TestServiceUpdateChangingTypeClearsFieldsForOtherTypes(t *testing.T) {
 	}
 	if movie.Platform != "" || movie.AgeGroup != "" || movie.PlayerCount != "" {
 		t.Fatalf("expected game-only fields to be cleared, got %+v", movie)
+	}
+}
+
+func TestServiceClearsBookIdentifiersForNonBooks(t *testing.T) {
+	ctx := context.Background()
+	repo := NewInMemoryRepository(nil)
+	svc := NewService(repo)
+	pages := 320
+
+	book, err := svc.Create(ctx, CreateItemInput{OwnerID: testOwnerID, Title: "Was A Book", ItemType: ItemTypeBook, ISBN13: "9780000000001", ISBN10: "0000000001", PageCount: &pages})
+	if err != nil {
+		t.Fatalf("create book failed: %v", err)
+	}
+	gameType := ItemTypeGame
+	game, err := svc.Update(ctx, book.ID, testOwnerID, UpdateItemInput{ItemType: &gameType})
+	if err != nil {
+		t.Fatalf("update to game failed: %v", err)
+	}
+	if game.ISBN13 != "" || game.ISBN10 != "" || game.PageCount != nil {
+		t.Fatalf("expected ISBNs and page count to be cleared, got %+v", game)
+	}
+	if _, err := repo.FindByISBN(ctx, "9780000000001", testOwnerID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected former ISBN not to match the converted item, got %v", err)
+	}
+
+	movie, err := svc.Create(ctx, CreateItemInput{OwnerID: testOwnerID, Title: "Movie", ItemType: ItemTypeMovie, ISBN13: "9780000000002", PageCount: &pages})
+	if err != nil {
+		t.Fatalf("create movie failed: %v", err)
+	}
+	if movie.ISBN13 != "" || movie.PageCount != nil {
+		t.Fatalf("expected book-only fields to be dropped on create, got %+v", movie)
 	}
 }
 

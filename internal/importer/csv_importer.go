@@ -32,6 +32,17 @@ type Summary struct {
 	SkippedDuplicates []SkippedRecord `json:"skippedDuplicates"`
 	Failed            []FailedRecord  `json:"failed"`
 	TruncatedRecords  bool            `json:"truncatedRecords,omitempty"`
+	// Interrupted reports that the request context ended before every row was
+	// processed; the unprocessed rows are listed in Failed.
+	Interrupted bool `json:"interrupted,omitempty"`
+}
+
+func (s *Summary) addFailed(record FailedRecord) {
+	if len(s.Failed) < MaxFailedRecords {
+		s.Failed = append(s.Failed, record)
+		return
+	}
+	s.TruncatedRecords = true
 }
 
 type SkippedRecord struct {
@@ -51,6 +62,8 @@ type FailedRecord struct {
 var ErrInvalidCSV = errors.New("invalid csv upload")
 
 var errMetadataLookupFailed = errors.New("metadata lookup failed; add a title to this row or try again later")
+
+var errImportInterrupted = errors.New("import stopped before this row finished because the request ran out of time; upload the file again to import the remaining rows (rows already imported are skipped as duplicates)")
 
 var errLookupBudgetExhausted = errors.New("metadata lookup skipped: this import ran out of time for ISBN lookups; add a title to this row or import it in a smaller file")
 
@@ -136,6 +149,16 @@ func (i *CSVImporter) Import(ctx context.Context, reader io.Reader, ownerID uuid
 	if err != nil {
 		return Summary{}, err
 	}
+	// Only files exported by Anthology (identified by the schemaVersion column)
+	// carry the exporter's formula-guard apostrophes; other files are taken
+	// verbatim.
+	anthologyExport := false
+	for _, column := range columns {
+		if column == "schemaversion" {
+			anthologyExport = true
+			break
+		}
+	}
 
 	type parsedRow struct {
 		number int
@@ -155,7 +178,7 @@ func (i *CSVImporter) Import(ctx context.Context, reader io.Reader, ownerID uuid
 			return Summary{}, fmt.Errorf("%w: failed to read row %d", ErrInvalidCSV, rowNumber+1)
 		}
 		rowNumber++
-		values := mapRecord(columns, record)
+		values := mapRecord(columns, record, anthologyExport)
 		if isRowEmpty(values) {
 			continue
 		}
@@ -177,20 +200,31 @@ func (i *CSVImporter) Import(ctx context.Context, reader io.Reader, ownerID uuid
 	defer cancelLookups()
 	allowance := &lookupAllowance{ctx: lookupCtx, remaining: i.maxLookups}
 
-	for _, row := range rows {
+	for idx, row := range rows {
+		if ctx.Err() != nil {
+			// The request is out of time: report the remaining rows instead of
+			// letting each insert fail with a context error.
+			summary.Interrupted = true
+			for _, rest := range rows[idx:] {
+				summary.addFailed(FailedRecord{
+					Row:        rest.number,
+					Title:      strings.TrimSpace(rest.values["title"]),
+					Identifier: firstNonEmpty(rest.values["isbn13"], rest.values["isbn10"]),
+					Error:      errImportInterrupted.Error(),
+				})
+			}
+			break
+		}
+
 		values := row.values
 		input, meta, rowErr := i.buildInput(allowance, values, ownerID)
 		if rowErr != nil {
-			if len(summary.Failed) < MaxFailedRecords {
-				summary.Failed = append(summary.Failed, FailedRecord{
-					Row:        row.number,
-					Title:      meta.title,
-					Identifier: meta.identifier,
-					Error:      rowErr.Error(),
-				})
-			} else {
-				summary.TruncatedRecords = true
-			}
+			summary.addFailed(FailedRecord{
+				Row:        row.number,
+				Title:      meta.title,
+				Identifier: meta.identifier,
+				Error:      rowErr.Error(),
+			})
 			continue
 		}
 
@@ -209,16 +243,17 @@ func (i *CSVImporter) Import(ctx context.Context, reader io.Reader, ownerID uuid
 		}
 
 		if _, err := i.items.Create(ctx, input); err != nil {
-			if len(summary.Failed) < MaxFailedRecords {
-				summary.Failed = append(summary.Failed, FailedRecord{
-					Row:        row.number,
-					Title:      input.Title,
-					Identifier: firstIdentifier(input),
-					Error:      err.Error(),
-				})
-			} else {
-				summary.TruncatedRecords = true
+			message := err.Error()
+			if ctx.Err() != nil {
+				summary.Interrupted = true
+				message = errImportInterrupted.Error()
 			}
+			summary.addFailed(FailedRecord{
+				Row:        row.number,
+				Title:      input.Title,
+				Identifier: firstIdentifier(input),
+				Error:      message,
+			})
 			continue
 		}
 
@@ -443,14 +478,18 @@ func normalizeHeader(header []string) (map[int]string, error) {
 	return columns, nil
 }
 
-func mapRecord(columns map[int]string, record []string) map[string]string {
+func mapRecord(columns map[int]string, record []string, unescape bool) map[string]string {
 	values := make(map[string]string, len(columns))
 	for idx, column := range columns {
 		if idx >= len(record) {
 			values[column] = ""
 			continue
 		}
-		values[column] = exporter.UnescapeCSVCell(strings.TrimSpace(record[idx]))
+		value := strings.TrimSpace(record[idx])
+		if unescape {
+			value = exporter.UnescapeCSVCell(value)
+		}
+		values[column] = value
 	}
 	return values
 }

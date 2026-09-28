@@ -85,9 +85,12 @@ func NewService(client *http.Client, opts ...Option) *Service {
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
+	// Copy the client so the redirect policy does not leak into callers.
+	guarded := *client
+	guarded.CheckRedirect = sameOriginHTTPSRedirects
 
 	svc := &Service{
-		client:  client,
+		client:  &guarded,
 		baseURL: defaultGoogleBooksURL,
 	}
 
@@ -294,6 +297,20 @@ func (s *Service) searchGoogleBooks(ctx context.Context, q string, maxResults in
 	}
 
 	return payload.Items, nil
+}
+
+// sameOriginHTTPSRedirects only follows HTTPS redirects to the origin of the
+// original request. net/http forwards custom headers such as X-Goog-Api-Key on
+// redirects, so any other target could receive the API key.
+func sameOriginHTTPSRedirects(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	origin := via[0].URL
+	if req.URL.Scheme != "https" || req.URL.Scheme != origin.Scheme || req.URL.Host != origin.Host {
+		return fmt.Errorf("refusing google books redirect to %s://%s", req.URL.Scheme, req.URL.Host)
+	}
+	return nil
 }
 
 // doGoogleBooksRequest issues a GET request to Google Books. The API key is sent

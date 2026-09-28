@@ -159,7 +159,7 @@ CSV importer:
 * Book rows with missing title but ISBN/UPC will call catalog lookup to backfill metadata; otherwise title is required.
 * Lookups are capped at 100 per import and share a 30s time budget; rows beyond either limit are reported in `failed` and can be re-imported with a title or in a smaller file.
 * Upload capped at 5 MiB (HTTP handler).
-* Optional columns match the export format (including `seriesName`, `volumeNumber`, `totalVolumes`); older files without them still import. A leading `'` added by the exporter before `=`, `+`, `-`, `@`, or tab is stripped.
+* Optional columns match the export format (including `seriesName`, `volumeNumber`, `totalVolumes`); older files without them still import. For files with a `schemaVersion` column (Anthology exports), a leading `'` added by the exporter before `=`, `+`, `-`, `@`, or tab is stripped; other files are imported verbatim.
 
 CSV exporter:
 * Columns are a superset of the import format so exports re-import cleanly.
@@ -265,7 +265,7 @@ sequenceDiagram
 ## Operational notes
 
 * CORS defaults: `http://localhost:4200,http://localhost:8080`; override via `ALLOWED_ORIGINS`.
-* Timeouts: Request timeout middleware 60s; HTTP server read/write 15s, idle 60s. CSV import extends its write deadline to 90s so the summary outlives the request timeout.
+* Timeouts: Request timeout middleware 60s (75s for `POST /api/items/import`); HTTP server read/write 15s, idle 60s. CSV import extends its write deadline to 90s so the summary outlives its request timeout; if the import context expires, remaining rows are reported in `failed` and the summary sets `interrupted`.
 * Logging: `slog` text handler; HTTP middleware logs method/path/status/duration.
 * CSV upload size guard at handler level; JSON max 1 MiB.
 * Postgres is required; local dev should point at a local database.
