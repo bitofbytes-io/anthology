@@ -74,10 +74,10 @@
       "picomatch": "4.0.4"
     },
     "@angular-eslint/builder": {
-      "@angular-devkit/core": "21.2.12"
+      "@angular-devkit/core": "21.2.24"
     },
     "@angular-eslint/schematics": {
-      "@angular-devkit/core": "21.2.12"
+      "@angular-devkit/core": "21.2.24"
     },
     "table": {
       "ajv": "8.18.0"
