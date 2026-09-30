@@ -466,8 +466,7 @@ export class ItemsPageComponent implements AfterViewInit, OnDestroy {
     }
 
     private currentFilters():
-        | { itemType?: ItemType; status?: BookStatus; shelfStatus?: ShelfStatusFilter }
-        | undefined {
+        { itemType?: ItemType; status?: BookStatus; shelfStatus?: ShelfStatusFilter } | undefined {
         const filters: {
             itemType?: ItemType;
             status?: BookStatus;
