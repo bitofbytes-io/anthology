@@ -1,7 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 
-import { AlphaRailComponent, LetterHistogram } from './alpha-rail.component';
+import { AlphaRailComponent } from './alpha-rail.component';
+import { LetterHistogram } from '../../models';
 
 describe('AlphaRailComponent', () => {
     let component: AlphaRailComponent;
