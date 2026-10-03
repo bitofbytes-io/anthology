@@ -33,7 +33,7 @@
                 type="file"
                 accept=".csv,text/csv"
                 (change)="handleFileChange($event)"
-                [disabled]="importBusy"
+                [disabled]="busy()"
             />
             @if (selectedFile(); as file) {
                 <div class="file-meta">
@@ -47,13 +47,13 @@
                 mat-flat-button
                 color="primary"
                 type="button"
-                [disabled]="!selectedFile() || importBusy"
+                [disabled]="!selectedFile() || busy()"
                 (click)="handleSubmit($event)"
             >
-                @if (!importBusy) {
+                @if (!busy()) {
                     <span>Upload CSV</span>
                 }
-                @if (importBusy) {
+                @if (busy()) {
                     <mat-progress-spinner diameter="18" mode="indeterminate"></mat-progress-spinner>
                 }
             </button>
@@ -61,7 +61,7 @@
                 mat-stroked-button
                 type="button"
                 (click)="handleReset()"
-                [disabled]="importBusy || (!selectedFile() && !importSummary)"
+                [disabled]="busy() || (!selectedFile() && !summary() && !error())"
             >
                 Clear
             </button>
@@ -76,14 +76,14 @@
         </div>
     </form>
 
-    @if (importError) {
-        <div class="csv-feedback">
+    @if (error(); as message) {
+        <div class="csv-feedback" role="alert">
             <mat-icon aria-hidden="true">error</mat-icon>
-            <span>{{ importError }}</span>
+            <span>{{ message }}</span>
         </div>
     }
 
-    @if (importSummary; as summary) {
+    @if (summary(); as summary) {
         <div class="csv-summary">
             <h4>Import summary</h4>
             <p>Imported {{ summary.imported }} of {{ summary.totalRows }} rows.</p>

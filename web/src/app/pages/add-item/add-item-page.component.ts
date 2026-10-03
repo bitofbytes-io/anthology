@@ -1,14 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import {
-    Component,
-    DestroyRef,
-    OnInit,
-    ViewChild,
-    computed,
-    inject,
-    signal,
-    viewChild,
-} from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
@@ -32,7 +23,6 @@ import {
 import { DuplicateMatch, ItemForm } from '../../models';
 import { ItemService } from '../../services/item.service';
 import { ItemLookupCategory, ItemLookupService } from '../../services/item-lookup.service';
-import { CsvImportSummary } from '../../models/import';
 import { CsvImportComponent } from './csv-import/csv-import.component';
 import { BarcodeScannerPanelComponent } from '../../components/shelves/barcode-scanner-panel/barcode-scanner-panel.component';
 import { LookupResultsComponent } from './lookup-results/lookup-results.component';
@@ -113,22 +103,6 @@ export class AddItemPageComponent implements OnInit {
     ];
 
     private static readonly MANUAL_ENTRY_TAB_INDEX = 1;
-    private static readonly CSV_IMPORT_TAB_INDEX = 2;
-    private static readonly CSV_FIELDS = [
-        'title',
-        'creator',
-        'itemType',
-        'releaseYear',
-        'pageCount',
-        'isbn13',
-        'isbn10',
-        'description',
-        'coverImage',
-        'notes',
-        'platform',
-        'ageGroup',
-        'playerCount',
-    ];
 
     private readonly itemService = inject(ItemService);
     private readonly itemLookupService = inject(ItemLookupService);
@@ -139,7 +113,6 @@ export class AddItemPageComponent implements OnInit {
     private readonly destroyRef = inject(DestroyRef);
     private readonly fb = inject(FormBuilder);
 
-    @ViewChild('csvImport') csvImportComponent?: CsvImportComponent;
     private readonly scannerPanel = viewChild(BarcodeScannerPanelComponent);
 
     readonly busy = signal(false);
@@ -150,18 +123,14 @@ export class AddItemPageComponent implements OnInit {
     readonly manualDraftSource = signal<{ query: string; label: string } | null>(null);
     readonly lastLookupSummary = signal<string | null>(null);
     readonly selectedTab = signal(0);
-    readonly importBusy = signal(false);
-    readonly importError = signal<string | null>(null);
-    readonly importSummary = signal<CsvImportSummary | null>(null);
-    readonly selectedCsvFile = signal<File | null>(null);
+    /** True while the CSV tab is uploading; the other tabs are disabled meanwhile. */
+    readonly csvImportBusy = signal(false);
     readonly scanning = signal(false);
     readonly seriesPrefill = signal<{ seriesName: string; volumeNumber: number | null } | null>(
         null,
     );
 
     readonly searchCategories = AddItemPageComponent.SEARCH_CATEGORIES;
-    readonly csvFields = AddItemPageComponent.CSV_FIELDS;
-    readonly csvTemplateUrl = '/csv-import-template.csv';
 
     readonly searchForm = this.fb.group({
         category: [
@@ -217,56 +186,6 @@ export class AddItemPageComponent implements OnInit {
             AddItemPageComponent.SEARCH_CATEGORIES[0]
         );
     });
-
-    handleCsvFileSelected(file: File): void {
-        this.importError.set(null);
-        this.importSummary.set(null);
-        this.selectedCsvFile.set(file);
-        this.activateCsvImportTab();
-    }
-
-    handleCsvImportSubmit(): void {
-        const file = this.selectedCsvFile() ?? this.csvImportComponent?.selectedFile() ?? null;
-        if (!file || this.importBusy()) {
-            return;
-        }
-
-        this.activateCsvImportTab();
-
-        this.importBusy.set(true);
-        this.importError.set(null);
-        this.importSummary.set(null);
-
-        this.itemService
-            .importCsv(file)
-            .pipe(takeUntilDestroyed(this.destroyRef))
-            .pipe(finalize(() => this.importBusy.set(false)))
-            .subscribe({
-                next: (summary: CsvImportSummary) => {
-                    const normalizedSummary: CsvImportSummary = {
-                        ...summary,
-                        skippedDuplicates: summary.skippedDuplicates ?? [],
-                        failed: summary.failed ?? [],
-                    };
-                    this.importSummary.set(normalizedSummary);
-                    this.selectedCsvFile.set(null);
-                    this.csvImportComponent?.clearSelectedFile();
-                    this.activateCsvImportTab();
-                },
-                error: (error) => {
-                    let message = 'Import failed. Confirm the CSV matches the template.';
-                    if (error instanceof HttpErrorResponse) {
-                        const serverMessage =
-                            typeof error.error?.error === 'string' ? error.error.error.trim() : '';
-                        if (serverMessage) {
-                            message = serverMessage;
-                        }
-                    }
-                    this.importError.set(message);
-                    this.activateCsvImportTab();
-                },
-            });
-    }
 
     handleDetectedBarcode(rawValue: string): void {
         const value = rawValue.trim();
@@ -526,18 +445,6 @@ export class AddItemPageComponent implements OnInit {
         }
 
         this.selectedTab.set(AddItemPageComponent.MANUAL_ENTRY_TAB_INDEX);
-    }
-
-    handleImportReset(): void {
-        this.selectedCsvFile.set(null);
-        this.importSummary.set(null);
-        this.importError.set(null);
-        this.csvImportComponent?.clearSelectedFile();
-        this.activateCsvImportTab();
-    }
-
-    private activateCsvImportTab(): void {
-        this.selectedTab.set(AddItemPageComponent.CSV_IMPORT_TAB_INDEX);
     }
 
     private getCategoryConfig(value: SearchCategoryValue): SearchCategoryConfig {

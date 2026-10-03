@@ -15,7 +15,6 @@ import { MatDialog } from '@angular/material/dialog';
 import { AddItemPageComponent } from './add-item-page.component';
 import { ItemService } from '../../services/item.service';
 import { Item, ItemForm } from '../../models';
-import { CsvImportSummary } from '../../models/import';
 import { ItemLookupService } from '../../services/item-lookup.service';
 import { SeriesService } from '../../services/series.service';
 
@@ -536,53 +535,21 @@ describe(AddItemPageComponent.name, () => {
         expect(fixture.componentInstance.manualDraft()).toBeNull();
     });
 
-    it('uploads a CSV file and stores the summary', async () => {
-        const summary = {
-            totalRows: 2,
-            imported: 2,
-            skippedDuplicates: [],
-            failed: [],
-        } satisfies CsvImportSummary;
-        itemServiceSpy.importCsv.mockReturnValue(of(summary));
+    it('disables the other tabs while a CSV import is uploading', () => {
         const fixture = createComponent();
-        fixture.componentInstance.selectedCsvFile.set(
-            new File(['title'], 'import.csv', { type: 'text/csv' }),
-        );
-        fixture.componentInstance.handleCsvImportSubmit();
-        await fixture.whenStable();
+        const tabs = (): HTMLElement[] =>
+            Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]'));
 
-        expect(itemServiceSpy.importCsv).toHaveBeenCalled();
-        expect(fixture.componentInstance.importSummary()).toEqual(summary);
-    });
+        fixture.componentInstance.csvImportBusy.set(true);
+        fixture.detectChanges();
+        expect(tabs().map((tab) => tab.getAttribute('aria-disabled'))).toEqual([
+            'true',
+            'true',
+            'false',
+        ]);
 
-    it('captures CSV import errors from the server', async () => {
-        itemServiceSpy.importCsv.mockReturnValue(
-            throwError(
-                () =>
-                    new HttpErrorResponse({
-                        status: 400,
-                        error: { error: 'missing required columns' },
-                    }),
-            ),
-        );
-        const fixture = createComponent();
-        fixture.componentInstance.selectedCsvFile.set(
-            new File(['title'], 'import.csv', { type: 'text/csv' }),
-        );
-        fixture.componentInstance.handleCsvImportSubmit();
-        await fixture.whenStable();
-
-        expect(fixture.componentInstance.importError()).toBe('missing required columns');
-    });
-
-    it('keeps the CSV import tab active when selecting a file', () => {
-        const fixture = createComponent();
-        fixture.componentInstance.selectedTab.set(0);
-        const file = new File(['data'], 'import.csv', { type: 'text/csv' });
-
-        fixture.componentInstance.handleCsvFileSelected(file);
-
-        expect(fixture.componentInstance.selectedTab()).toBe(2);
-        expect(fixture.componentInstance.selectedCsvFile()).toBe(file);
+        fixture.componentInstance.csvImportBusy.set(false);
+        fixture.detectChanges();
+        expect(tabs().every((tab) => tab.getAttribute('aria-disabled') === 'false')).toBe(true);
     });
 });
