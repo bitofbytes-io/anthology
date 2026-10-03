@@ -1,11 +1,15 @@
 <div class="scanner-section" #scannerSection>
     <div class="scanner-instructions">
-        <p>Scan ISBN barcodes to automatically add and place items in this slot.</p>
+        <p>{{ instructions }}</p>
     </div>
+
+    @if (scannerStatus()) {
+        <p class="scanner-status" aria-live="polite">{{ scannerStatus() }}</p>
+    }
 
     <div class="scanner-preview">
         <video #scanVideo autoplay playsinline muted class="scanner-video"></video>
-        @if (scannerActive()) {
+        @if (scannerActive() && scannerReady()) {
             <div class="scanner-overlay">
                 <div class="scanner-frame"></div>
             </div>

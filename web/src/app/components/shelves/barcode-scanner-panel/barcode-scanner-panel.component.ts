@@ -36,10 +36,13 @@ export class BarcodeScannerPanelComponent implements OnChanges {
     @ViewChild('scannerSection') scannerSection?: ElementRef<HTMLDivElement>;
 
     @Input() active = false;
+    @Input() instructions = 'Scan ISBN barcodes to automatically add and place items in this slot.';
     @Output() barcodeScanned = new EventEmitter<string>();
 
     readonly scannerSupported = computed(() => this.barcodeScanner.scannerSupported());
     readonly scannerActive = computed(() => this.barcodeScanner.scannerActive());
+    readonly scannerReady = computed(() => this.barcodeScanner.scannerReady());
+    readonly scannerStatus = computed(() => this.barcodeScanner.scannerStatus());
     readonly scannerError = computed(() => this.barcodeScanner.scannerError());
     readonly scannerHint = computed(() => this.barcodeScanner.scannerHint());
     readonly scannerProcessing = computed(() => this.barcodeScanner.scannerProcessing());
