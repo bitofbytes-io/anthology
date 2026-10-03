@@ -67,6 +67,7 @@
     "vitest": "^4.0.8"
   },
   "overrides": {
+    "piscina": "5.3.2",
     "@modelcontextprotocol/sdk": {
       "ajv": "8.18.0"
     },
