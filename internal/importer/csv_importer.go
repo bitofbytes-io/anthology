@@ -590,20 +590,6 @@ func firstIdentifier(input items.CreateItemInput) string {
 	return ""
 }
 
-func normalizeIdentifier(value string) string {
-	cleaned := strings.TrimSpace(value)
-	if cleaned == "" {
-		return ""
-	}
-	builder := strings.Builder{}
-	for _, r := range cleaned {
-		if r >= '0' && r <= '9' {
-			builder.WriteRune(r)
-		}
-	}
-	return builder.String()
-}
-
 type duplicateTracker struct {
 	known map[string]string
 }
@@ -612,8 +598,8 @@ func newDuplicateTracker(existing []items.Item) *duplicateTracker {
 	tracker := &duplicateTracker{known: map[string]string{}}
 	for _, item := range existing {
 		tracker.store("title", strings.ToLower(strings.TrimSpace(item.Title)))
-		tracker.store("isbn13", normalizeIdentifier(item.ISBN13))
-		tracker.store("isbn10", normalizeIdentifier(item.ISBN10))
+		tracker.store("isbn13", items.NormalizeIdentifier(item.ISBN13))
+		tracker.store("isbn10", items.NormalizeIdentifier(item.ISBN10))
 	}
 	return tracker
 }
@@ -632,12 +618,12 @@ func (t *duplicateTracker) Check(input items.CreateItemInput) (string, bool) {
 			return fmt.Sprintf("duplicate %s", reason), true
 		}
 	}
-	if isbn := normalizeIdentifier(input.ISBN13); isbn != "" {
+	if isbn := items.NormalizeIdentifier(input.ISBN13); isbn != "" {
 		if reason, ok := t.known["isbn13:"+isbn]; ok {
 			return fmt.Sprintf("duplicate %s", reason), true
 		}
 	}
-	if isbn := normalizeIdentifier(input.ISBN10); isbn != "" {
+	if isbn := items.NormalizeIdentifier(input.ISBN10); isbn != "" {
 		if reason, ok := t.known["isbn10:"+isbn]; ok {
 			return fmt.Sprintf("duplicate %s", reason), true
 		}
@@ -647,6 +633,6 @@ func (t *duplicateTracker) Check(input items.CreateItemInput) (string, bool) {
 
 func (t *duplicateTracker) Add(input items.CreateItemInput) {
 	t.store("title", strings.ToLower(strings.TrimSpace(input.Title)))
-	t.store("isbn13", normalizeIdentifier(input.ISBN13))
-	t.store("isbn10", normalizeIdentifier(input.ISBN10))
+	t.store("isbn13", items.NormalizeIdentifier(input.ISBN13))
+	t.store("isbn10", items.NormalizeIdentifier(input.ISBN10))
 }

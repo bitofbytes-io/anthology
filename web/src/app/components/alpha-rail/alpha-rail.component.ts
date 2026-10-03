@@ -9,7 +9,7 @@ import {
     Signal,
 } from '@angular/core';
 
-export type LetterHistogram = Record<string, number>;
+import { LetterHistogram } from '../../models';
 
 const ALPHABET: string[] = [
     'A',

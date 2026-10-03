@@ -2,13 +2,12 @@ import { HttpErrorResponse } from '@angular/common/http';
 import {
     Component,
     DestroyRef,
-    ElementRef,
-    NgZone,
     OnInit,
     ViewChild,
     computed,
     inject,
     signal,
+    viewChild,
 } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -34,9 +33,8 @@ import { DuplicateMatch, ItemForm } from '../../models';
 import { ItemService } from '../../services/item.service';
 import { ItemLookupCategory, ItemLookupService } from '../../services/item-lookup.service';
 import { CsvImportSummary } from '../../models/import';
-import { BarcodeScannerService } from '../../services/barcode-scanner.service';
 import { CsvImportComponent } from './csv-import/csv-import.component';
-import { BarcodeScannerComponent } from './barcode-scanner/barcode-scanner.component';
+import { BarcodeScannerPanelComponent } from '../../components/shelves/barcode-scanner-panel/barcode-scanner-panel.component';
 import { LookupResultsComponent } from './lookup-results/lookup-results.component';
 import { NotificationService } from '../../services/notification.service';
 
@@ -69,7 +67,7 @@ interface SearchCategoryConfig {
         RouterModule,
         ItemFormComponent,
         CsvImportComponent,
-        BarcodeScannerComponent,
+        BarcodeScannerPanelComponent,
         LookupResultsComponent,
     ],
     templateUrl: './add-item-page.component.html',
@@ -140,11 +138,9 @@ export class AddItemPageComponent implements OnInit {
     private readonly dialog = inject(MatDialog);
     private readonly destroyRef = inject(DestroyRef);
     private readonly fb = inject(FormBuilder);
-    private readonly barcodeScanner = inject(BarcodeScannerService);
-    private readonly ngZone = inject(NgZone);
 
-    @ViewChild('barcodeScanner') barcodeScannerComponent?: BarcodeScannerComponent;
     @ViewChild('csvImport') csvImportComponent?: CsvImportComponent;
+    private readonly scannerPanel = viewChild(BarcodeScannerPanelComponent);
 
     readonly busy = signal(false);
     readonly lookupBusy = signal(false);
@@ -158,14 +154,7 @@ export class AddItemPageComponent implements OnInit {
     readonly importError = signal<string | null>(null);
     readonly importSummary = signal<CsvImportSummary | null>(null);
     readonly selectedCsvFile = signal<File | null>(null);
-    readonly scannerActive = computed(() => this.barcodeScanner.scannerActive());
-    readonly scannerStatus = computed(() => this.barcodeScanner.scannerStatus());
-    readonly scannerError = computed(() => this.barcodeScanner.scannerError());
-    readonly scannerSupported = computed(() => this.barcodeScanner.scannerSupported());
-    readonly scannerHint = computed(() => this.barcodeScanner.scannerHint());
-    readonly scannerProcessing = computed(() => this.barcodeScanner.scannerProcessing());
-    readonly scannerFlash = computed(() => this.barcodeScanner.scannerFlash());
-    readonly scannerReady = computed(() => this.barcodeScanner.scannerReady());
+    readonly scanning = signal(false);
     readonly seriesPrefill = signal<{ seriesName: string; volumeNumber: number | null } | null>(
         null,
     );
@@ -181,10 +170,6 @@ export class AddItemPageComponent implements OnInit {
         ],
         query: ['', [Validators.required, Validators.minLength(3)]],
     });
-
-    constructor() {
-        this.destroyRef.onDestroy(() => this.stopBarcodeScanner());
-    }
 
     ngOnInit(): void {
         this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
@@ -232,24 +217,6 @@ export class AddItemPageComponent implements OnInit {
             AddItemPageComponent.SEARCH_CATEGORIES[0]
         );
     });
-
-    async startBarcodeScan(): Promise<void> {
-        if (this.scannerActive()) {
-            return;
-        }
-
-        const video = await this.waitForScanVideoElement();
-        if (!video) {
-            this.barcodeScanner.scannerError.set('Camera preview is not available.');
-            return;
-        }
-
-        await this.barcodeScanner.startScanner(video, (result) => {
-            this.ngZone.run(() => {
-                this.handleDetectedBarcode(result.rawValue);
-            });
-        });
-    }
 
     handleCsvFileSelected(file: File): void {
         this.importError.set(null);
@@ -309,19 +276,6 @@ export class AddItemPageComponent implements OnInit {
 
         this.searchForm.get('query')?.setValue(value);
         this.handleLookupSubmit('scanner');
-    }
-
-    stopBarcodeScanner(): void {
-        this.barcodeScanner.stopScanner();
-    }
-
-    private async waitForScanVideoElement(): Promise<HTMLVideoElement | null> {
-        if (this.barcodeScannerComponent?.getVideoElement()) {
-            return this.barcodeScannerComponent.getVideoElement();
-        }
-
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-        return this.barcodeScannerComponent?.getVideoElement() ?? null;
     }
 
     async handleSave(formValue: ItemForm): Promise<void> {
@@ -399,15 +353,13 @@ export class AddItemPageComponent implements OnInit {
         }
 
         if (source === 'manual') {
-            this.stopBarcodeScanner();
+            this.scanning.set(false);
         }
 
         if (this.searchForm.invalid) {
             this.searchForm.markAllAsTouched();
             if (source === 'scanner') {
-                this.barcodeScanner.reportScanFailure(
-                    'That barcode was not valid. Try again or type the ISBN.',
-                );
+                this.rejectScannedBarcode();
             }
             return;
         }
@@ -419,9 +371,7 @@ export class AddItemPageComponent implements OnInit {
         if (!rawCategory || !query) {
             this.searchForm.get('query')?.setErrors({ required: true });
             if (source === 'scanner') {
-                this.barcodeScanner.reportScanFailure(
-                    'That barcode was not valid. Try again or type the ISBN.',
-                );
+                this.rejectScannedBarcode();
             }
             return;
         }
@@ -440,7 +390,7 @@ export class AddItemPageComponent implements OnInit {
                 finalize(() => {
                     this.lookupBusy.set(false);
                     if (source === 'scanner') {
-                        this.stopBarcodeScanner();
+                        this.scanning.set(false);
                     }
                 }),
             )
@@ -449,10 +399,6 @@ export class AddItemPageComponent implements OnInit {
                     const drafts = results.map((partial) => this.composeDraft(partial, category));
                     this.lookupResults.set(drafts);
                     if (drafts.length > 0) {
-                        if (source === 'scanner') {
-                            const title = drafts[0].title?.trim() ? drafts[0].title.trim() : query;
-                            this.barcodeScanner.reportScanSuccess(title);
-                        }
                         this.manualDraft.set({ ...drafts[0] });
                         this.manualDraftSource.set({
                             query,
@@ -470,12 +416,9 @@ export class AddItemPageComponent implements OnInit {
                         this.manualDraftSource.set(null);
                         this.lastLookupSummary.set(null);
 
-                        const message = 'No results found. Try another barcode or type the ISBN.';
-                        if (source === 'scanner') {
-                            this.barcodeScanner.reportScanFailure(message);
-                        } else {
-                            this.lookupError.set(message);
-                        }
+                        this.lookupError.set(
+                            'No results found. Try another barcode or type the ISBN.',
+                        );
                     }
                 },
                 error: (error) => {
@@ -494,13 +437,29 @@ export class AddItemPageComponent implements OnInit {
                         }
                     }
 
-                    if (source === 'scanner') {
-                        this.barcodeScanner.reportScanFailure(message);
-                    } else {
-                        this.lookupError.set(message);
-                    }
+                    this.lookupError.set(message);
                 },
             });
+    }
+
+    toggleScanning(): void {
+        if (this.scanning()) {
+            this.scanning.set(false);
+            return;
+        }
+        this.lookupError.set(null);
+        this.scanning.set(true);
+    }
+
+    handleScannerFailed(message: string): void {
+        this.scanning.set(false);
+        this.lookupError.set(message);
+    }
+
+    private rejectScannedBarcode(): void {
+        // Keep the camera open so the user can try another barcode.
+        this.scannerPanel()?.reportScanComplete();
+        this.lookupError.set('That barcode was not valid. Try again or type the ISBN.');
     }
 
     handleTabChange(index: number): void {

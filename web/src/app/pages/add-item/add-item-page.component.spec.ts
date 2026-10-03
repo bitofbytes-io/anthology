@@ -244,6 +244,31 @@ describe(AddItemPageComponent.name, () => {
         expect(itemLookupServiceSpy.lookup).toHaveBeenCalledWith('9781234567890', 'book');
     });
 
+    it('ends the scan session and shows the error when a scanned barcode has no match', async () => {
+        itemLookupServiceSpy.lookup.mockReturnValue(of([]));
+        const fixture = createComponent();
+        fixture.componentInstance.scanning.set(true);
+
+        fixture.componentInstance.handleDetectedBarcode('9781234567890');
+        await fixture.whenStable();
+
+        expect(fixture.componentInstance.scanning()).toBe(false);
+        expect(fixture.componentInstance.lookupError()).toBe(
+            'No results found. Try another barcode or type the ISBN.',
+        );
+    });
+
+    it('ends the scan session and shows the error when the scanner fails', () => {
+        const fixture = createComponent();
+        fixture.componentInstance.toggleScanning();
+        expect(fixture.componentInstance.scanning()).toBe(true);
+
+        fixture.componentInstance.handleScannerFailed('Camera access failed.');
+
+        expect(fixture.componentInstance.scanning()).toBe(false);
+        expect(fixture.componentInstance.lookupError()).toBe('Camera access failed.');
+    });
+
     it('prefills series info and navigates to Search tab using the last repeated query param value', async () => {
         queryParamMapSubject.next(
             createParamMap({

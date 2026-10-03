@@ -106,6 +106,10 @@ mat-card {
     height: 18px;
 }
 
+.barcode-scanner {
+    width: min(100%, 520px);
+}
+
 .lookup-feedback {
     display: flex;
     flex-direction: column;

@@ -109,33 +109,27 @@
                                         <button
                                             mat-stroked-button
                                             type="button"
-                                            (click)="
-                                                scannerActive()
-                                                    ? stopBarcodeScanner()
-                                                    : startBarcodeScan()
-                                            "
+                                            (click)="toggleScanning()"
                                             [disabled]="lookupBusy()"
                                         >
                                             <mat-icon aria-hidden="true">photo_camera</mat-icon>
-                                            @if (!scannerActive()) {
+                                            @if (!scanning()) {
                                                 <span>Scan barcode</span>
                                             }
-                                            @if (scannerActive()) {
+                                            @if (scanning()) {
                                                 <span>Stop scanning</span>
                                             }
                                         </button>
                                     }
                                 </div>
-                                @if (activeCategory().value === 'book') {
-                                    <app-barcode-scanner
-                                        #barcodeScanner
-                                        [scannerActive]="scannerActive()"
-                                        [scannerReady]="scannerReady()"
-                                        [scannerStatus]="scannerStatus()"
-                                        [scannerError]="scannerError()"
-                                        [scannerProcessing]="scannerProcessing()"
-                                        [scannerFlash]="scannerFlash()"
-                                    ></app-barcode-scanner>
+                                @if (activeCategory().value === 'book' && scanning()) {
+                                    <app-barcode-scanner-panel
+                                        class="barcode-scanner"
+                                        [active]="true"
+                                        instructions="Once we read a code, we'll automatically run the lookup for you."
+                                        (barcodeScanned)="handleDetectedBarcode($event)"
+                                        (scannerFailed)="handleScannerFailed($event)"
+                                    ></app-barcode-scanner-panel>
                                 }
                             </div>
                         </form>

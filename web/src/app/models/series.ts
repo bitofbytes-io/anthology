@@ -26,9 +26,3 @@ export const SERIES_STATUS_LABELS: Record<SeriesStatus, string> = {
     incomplete: 'Incomplete',
     unknown: 'Unknown',
 };
-
-export const SERIES_STATUS_COLORS: Record<SeriesStatus, string> = {
-    complete: 'primary',
-    incomplete: 'warn',
-    unknown: 'accent',
-};

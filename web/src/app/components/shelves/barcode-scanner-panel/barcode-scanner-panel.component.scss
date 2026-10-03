@@ -15,6 +15,16 @@
     }
 }
 
+.scanner-status {
+    color: var(--mat-sys-on-surface-variant);
+    margin: 0 0 16px;
+    font-size: 0.9rem;
+
+    &:empty {
+        margin: 0;
+    }
+}
+
 .scanner-preview {
     position: relative;
     width: 100%;
