@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, inject, signal } from '@angular/core';
 
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -65,9 +66,14 @@ export class AddShelfPageComponent {
                     this.resetForm();
                     this.router.navigate(['/shelves', shelf.shelf.id]);
                 },
-                error: () => {
+                error: (error: unknown) => {
                     this.creating.set(false);
-                    this.notification.error('Could not create shelf');
+                    const duplicate = error instanceof HttpErrorResponse && error.status === 409;
+                    this.notification.error(
+                        duplicate
+                            ? 'A shelf with this name already exists'
+                            : 'Could not create shelf',
+                    );
                 },
             });
     }

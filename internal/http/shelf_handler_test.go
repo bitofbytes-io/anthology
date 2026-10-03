@@ -55,3 +55,27 @@ func TestShelfUpdateLayoutExplicitEmptyArray(t *testing.T) {
 		}
 	}
 }
+
+func TestShelfCreateDuplicateNameReturnsConflict(t *testing.T) {
+	repo := shelves.NewInMemoryRepository()
+	itemRepo := items.NewInMemoryRepository(nil)
+	handler := NewShelfHandler(shelves.NewService(repo, itemRepo, nil, items.NewService(itemRepo)), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	body := `{"name":"Living room","photoUrl":"https://example.com/shelf.jpg"}`
+
+	first := reqWithUser(httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)))
+	recorder := httptest.NewRecorder()
+	handler.Create(recorder, first)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("first create failed: %d %s", recorder.Code, recorder.Body.String())
+	}
+
+	second := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)).WithContext(first.Context())
+	recorder = httptest.NewRecorder()
+	handler.Create(recorder, second)
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("duplicate name: expected 409, got %d %s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "already exists") {
+		t.Fatalf("expected duplicate-name message, got %s", recorder.Body.String())
+	}
+}

@@ -2,6 +2,7 @@ package shelves
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -175,5 +176,35 @@ func TestLegacyAndNewSlotIdentity(t *testing.T) {
 	_, _, _, err := normalizeSlots([]LayoutSlotInput{{NewSlot: true, SlotID: &old, XEndNorm: 1, YEndNorm: 1}}, uuid.New(), nil, nil, nil, map[uuid.UUID]struct{}{old: {}})
 	if err == nil {
 		t.Fatal("newSlot and slotId must be mutually exclusive")
+	}
+}
+
+// ANTHOLOGY_TEST_DATABASE_URL must name a dedicated, disposable test database.
+func TestPostgresCreateShelfDuplicateName(t *testing.T) {
+	db := testdb.Open(t)
+	ctx := context.Background()
+	repo := NewPostgresRepository(db)
+	owners := []uuid.UUID{uuid.New(), uuid.New()}
+	for _, owner := range owners {
+		if _, err := db.Exec(`INSERT INTO users(id,email,oauth_provider,oauth_provider_id) VALUES($1,$2,'test',$2)`, owner, owner.String()); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM users WHERE id=$1`, owner) })
+	}
+	now := time.Now().UTC()
+	create := func(owner uuid.UUID) error {
+		shelf := Shelf{ID: uuid.New(), OwnerID: owner, Name: "Living room", PhotoURL: "https://example.com/shelf.jpg", CreatedAt: now, UpdatedAt: now}
+		_, err := repo.CreateShelf(ctx, shelf, nil, nil, nil)
+		return err
+	}
+
+	if err := create(owners[0]); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	if err := create(owners[0]); !errors.Is(err, ErrDuplicateName) {
+		t.Fatalf("duplicate create: got %v, want ErrDuplicateName", err)
+	}
+	if err := create(owners[1]); err != nil {
+		t.Fatalf("same name for another owner should be allowed: %v", err)
 	}
 }

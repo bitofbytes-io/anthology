@@ -30,6 +30,8 @@ func (h *ShelfHandler) handleShelfError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "no results found for scanned barcode")
 	case errors.Is(err, shelves.ErrValidation):
 		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, shelves.ErrDuplicateName):
+		writeError(w, http.StatusConflict, err.Error())
 	default:
 		h.logger.Error("shelf operation failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "unexpected error")

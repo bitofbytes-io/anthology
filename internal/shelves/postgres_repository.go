@@ -31,6 +31,9 @@ func (r *postgresRepository) CreateShelf(ctx context.Context, shelf Shelf, rows 
         INSERT INTO shelves (id, owner_id, name, description, photo_url, created_at, updated_at)
         VALUES (:id, :owner_id, :name, :description, :photo_url, :created_at, :updated_at)
     `, shelf); err != nil {
+		if isDuplicateShelfName(err) {
+			return ShelfWithLayout{}, ErrDuplicateName
+		}
 		return ShelfWithLayout{}, err
 	}
 
@@ -49,6 +52,13 @@ func (r *postgresRepository) CreateShelf(ctx context.Context, shelf Shelf, rows 
 	}
 
 	return r.GetShelf(ctx, shelf.ID, shelf.OwnerID)
+}
+
+// isDuplicateShelfName reports whether err is a unique violation of the
+// per-owner shelf name index.
+func isDuplicateShelfName(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == "uq_shelves_name_owner"
 }
 
 func (r *postgresRepository) ListShelves(ctx context.Context, ownerID uuid.UUID) ([]ShelfSummary, error) {

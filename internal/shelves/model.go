@@ -19,6 +19,9 @@ var ErrSlotNotFound = errors.New("shelf slot not found")
 // ErrValidation wraps user-correctable validation errors safe to expose to clients.
 var ErrValidation = errors.New("validation error")
 
+// ErrDuplicateName is returned when the owner already has a shelf with the same name.
+var ErrDuplicateName = errors.New("a shelf with this name already exists")
+
 // ErrISBNNotFound is returned when a scanned barcode cannot be found in the catalog.
 var ErrISBNNotFound = errors.New("no results found for scanned barcode")
 
