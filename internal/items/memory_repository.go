@@ -2,6 +2,7 @@ package items
 
 import (
 	"context"
+	"iter"
 	"slices"
 	"strings"
 	"sync"
@@ -25,6 +26,21 @@ func NewInMemoryRepository(initial []Item) *InMemoryRepository {
 		order = append(order, item.ID)
 	}
 	return &InMemoryRepository{data: data, order: order}
+}
+
+// ownedItems yields the owner's items in insertion order. Callers must hold r.mu.
+func (r *InMemoryRepository) ownedItems(ownerID uuid.UUID) iter.Seq[Item] {
+	return func(yield func(Item) bool) {
+		for _, id := range r.order {
+			item, ok := r.data[id]
+			if !ok || item.OwnerID != ownerID {
+				continue
+			}
+			if !yield(item) {
+				return
+			}
+		}
+	}
 }
 
 // Create stores a new item.
@@ -64,83 +80,77 @@ func (r *InMemoryRepository) List(_ context.Context, opts ListOptions) ([]Item, 
 		queryFilter = strings.ToLower(strings.TrimSpace(*opts.Query))
 	}
 
-	for _, id := range r.order {
-		if item, ok := r.data[id]; ok {
-			// Always filter by owner_id
-			if item.OwnerID != opts.OwnerID {
-				continue
-			}
-			if opts.ItemType != nil && item.ItemType != *opts.ItemType {
-				continue
-			}
+	for item := range r.ownedItems(opts.OwnerID) {
+		if opts.ItemType != nil && item.ItemType != *opts.ItemType {
+			continue
+		}
 
-			// When filtering by status with no type filter (All), only apply to books (BE-2)
-			if opts.ReadingStatus != nil {
-				if opts.ItemType == nil {
-					// All items with status filter:
-					// - "none" status: show all items (books with none + all non-books)
-					// - Other statuses: show only books with that status
-					if *opts.ReadingStatus == BookStatusNone {
-						// For "none" status, show books with none status + all non-books
-						if item.ItemType == ItemTypeBook && item.ReadingStatus != BookStatusNone {
-							continue
-						}
-					} else {
-						// For other statuses, only show books with that status
-						if item.ItemType != ItemTypeBook {
-							continue
-						}
-						if item.ReadingStatus != *opts.ReadingStatus {
-							continue
-						}
-					}
-				} else if item.ReadingStatus != *opts.ReadingStatus {
-					// Specific type selected: apply status filter normally
-					continue
-				}
-			}
-
-			if opts.Initial != nil {
-				initial := strings.ToUpper(strings.TrimSpace(*opts.Initial))
-				titleInitial := ""
-				trimmed := strings.TrimSpace(item.Title)
-				if len(trimmed) > 0 {
-					titleInitial = strings.ToUpper(string(trimmed[0]))
-				}
-
-				if initial == "#" {
-					if titleInitial >= "A" && titleInitial <= "Z" {
+		// When filtering by status with no type filter (All), only apply to books (BE-2)
+		if opts.ReadingStatus != nil {
+			if opts.ItemType == nil {
+				// All items with status filter:
+				// - "none" status: show all items (books with none + all non-books)
+				// - Other statuses: show only books with that status
+				if *opts.ReadingStatus == BookStatusNone {
+					// For "none" status, show books with none status + all non-books
+					if item.ItemType == ItemTypeBook && item.ReadingStatus != BookStatusNone {
 						continue
 					}
 				} else {
-					if titleInitial != initial {
+					// For other statuses, only show books with that status
+					if item.ItemType != ItemTypeBook {
+						continue
+					}
+					if item.ReadingStatus != *opts.ReadingStatus {
 						continue
 					}
 				}
+			} else if item.ReadingStatus != *opts.ReadingStatus {
+				// Specific type selected: apply status filter normally
+				continue
+			}
+		}
+
+		if opts.Initial != nil {
+			initial := strings.ToUpper(strings.TrimSpace(*opts.Initial))
+			titleInitial := ""
+			trimmed := strings.TrimSpace(item.Title)
+			if len(trimmed) > 0 {
+				titleInitial = strings.ToUpper(string(trimmed[0]))
 			}
 
-			if queryFilter != "" {
-				title := strings.ToLower(strings.TrimSpace(item.Title))
-				if !strings.Contains(title, queryFilter) {
+			if initial == "#" {
+				if titleInitial >= "A" && titleInitial <= "Z" {
+					continue
+				}
+			} else {
+				if titleInitial != initial {
 					continue
 				}
 			}
+		}
 
-			if opts.ShelfStatus != nil {
-				switch *opts.ShelfStatus {
-				case ShelfStatusOn:
-					if item.ShelfPlacement == nil {
-						continue
-					}
-				case ShelfStatusOff:
-					if item.ShelfPlacement != nil {
-						continue
-					}
+		if queryFilter != "" {
+			title := strings.ToLower(strings.TrimSpace(item.Title))
+			if !strings.Contains(title, queryFilter) {
+				continue
+			}
+		}
+
+		if opts.ShelfStatus != nil {
+			switch *opts.ShelfStatus {
+			case ShelfStatusOn:
+				if item.ShelfPlacement == nil {
+					continue
+				}
+			case ShelfStatusOff:
+				if item.ShelfPlacement != nil {
+					continue
 				}
 			}
-
-			items = append(items, item)
 		}
+
+		items = append(items, item)
 	}
 
 	if opts.Limit != nil && *opts.Limit > 0 && len(items) > *opts.Limit {
@@ -189,9 +199,8 @@ func (r *InMemoryRepository) FindByISBN(_ context.Context, isbn string, ownerID 
 		match Item
 		found bool
 	)
-	for _, id := range r.order {
-		item, ok := r.data[id]
-		if !ok || item.OwnerID != ownerID || item.ItemType != ItemTypeBook {
+	for item := range r.ownedItems(ownerID) {
+		if item.ItemType != ItemTypeBook {
 			continue
 		}
 		if isbnMatchKey(item.ISBN13) != normalized && isbnMatchKey(item.ISBN10) != normalized {
@@ -275,17 +284,7 @@ func (r *InMemoryRepository) Histogram(_ context.Context, opts HistogramOptions)
 
 	histogram := make(LetterHistogram)
 
-	for _, id := range r.order {
-		item, ok := r.data[id]
-		if !ok {
-			continue
-		}
-
-		// Always filter by owner_id
-		if item.OwnerID != opts.OwnerID {
-			continue
-		}
-
+	for item := range r.ownedItems(opts.OwnerID) {
 		if opts.ItemType != nil && item.ItemType != *opts.ItemType {
 			continue
 		}
@@ -348,19 +347,9 @@ func (r *InMemoryRepository) FindDuplicates(_ context.Context, input DuplicateCh
 
 	const maxMatches = 5
 
-	for _, id := range r.order {
+	for item := range r.ownedItems(ownerID) {
 		if len(matches) >= maxMatches {
 			break
-		}
-
-		item, ok := r.data[id]
-		if !ok {
-			continue
-		}
-
-		// Filter by owner_id
-		if item.OwnerID != ownerID {
-			continue
 		}
 
 		if seen[item.ID] {
@@ -437,17 +426,7 @@ func (r *InMemoryRepository) ListSeries(_ context.Context, opts SeriesRepoListOp
 	seriesMap := make(map[string][]Item)
 	seriesOrder := []string{}
 
-	for _, id := range r.order {
-		item, ok := r.data[id]
-		if !ok {
-			continue
-		}
-
-		// Filter by owner_id
-		if item.OwnerID != ownerID {
-			continue
-		}
-
+	for item := range r.ownedItems(ownerID) {
 		// Only include books with series
 		if item.ItemType != ItemTypeBook || item.SeriesName == "" {
 			continue
@@ -503,62 +482,17 @@ func (r *InMemoryRepository) ListSeries(_ context.Context, opts SeriesRepoListOp
 }
 
 // GetSeriesByName returns detailed info about a single series.
-func (r *InMemoryRepository) GetSeriesByName(_ context.Context, name string, ownerID uuid.UUID) (SeriesSummary, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	var items []Item
-
-	for _, id := range r.order {
-		item, ok := r.data[id]
-		if !ok {
-			continue
-		}
-
-		// Filter by owner_id
-		if item.OwnerID != ownerID {
-			continue
-		}
-
-		if item.ItemType == ItemTypeBook && item.SeriesName == name {
-			items = append(items, item)
+func (r *InMemoryRepository) GetSeriesByName(ctx context.Context, name string, ownerID uuid.UUID) (SeriesSummary, error) {
+	summaries, err := r.ListSeries(ctx, SeriesRepoListOptions{IncludeItems: true}, ownerID)
+	if err != nil {
+		return SeriesSummary{}, err
+	}
+	for _, summary := range summaries {
+		if summary.SeriesName == name {
+			return summary, nil
 		}
 	}
-
-	if len(items) == 0 {
-		return SeriesSummary{}, ErrNotFound
-	}
-
-	// Sort items by volume number
-	slices.SortFunc(items, func(a, b Item) int {
-		if a.VolumeNumber == nil && b.VolumeNumber == nil {
-			return strings.Compare(a.Title, b.Title)
-		}
-		if a.VolumeNumber == nil {
-			return 1
-		}
-		if b.VolumeNumber == nil {
-			return -1
-		}
-		return *a.VolumeNumber - *b.VolumeNumber
-	})
-
-	summary := SeriesSummary{
-		SeriesName: name,
-		OwnedCount: len(items),
-		Items:      items,
-	}
-
-	// Find max total_volumes from items
-	for _, item := range items {
-		if item.TotalVolumes != nil {
-			if summary.TotalVolumes == nil || *item.TotalVolumes > *summary.TotalVolumes {
-				summary.TotalVolumes = item.TotalVolumes
-			}
-		}
-	}
-
-	return summary, nil
+	return SeriesSummary{}, ErrNotFound
 }
 
 // ListSeriesNamesByNameCI returns distinct series names that match case-insensitively.
@@ -571,14 +505,7 @@ func (r *InMemoryRepository) ListSeriesNamesByNameCI(_ context.Context, name str
 	}
 
 	seen := make(map[string]struct{})
-	for _, id := range r.order {
-		item, ok := r.data[id]
-		if !ok {
-			continue
-		}
-		if item.OwnerID != ownerID {
-			continue
-		}
+	for item := range r.ownedItems(ownerID) {
 		if item.ItemType != ItemTypeBook || item.SeriesName == "" {
 			continue
 		}
@@ -605,17 +532,10 @@ func (r *InMemoryRepository) UpdateSeriesName(_ context.Context, oldName, newNam
 	defer r.mu.Unlock()
 
 	var count int64
-	for _, id := range r.order {
-		item, ok := r.data[id]
-		if !ok {
-			continue
-		}
-		if item.OwnerID != ownerID {
-			continue
-		}
+	for item := range r.ownedItems(ownerID) {
 		if item.ItemType == ItemTypeBook && item.SeriesName == oldName {
 			item.SeriesName = newName
-			r.data[id] = item
+			r.data[item.ID] = item
 			count++
 		}
 	}
@@ -628,19 +548,12 @@ func (r *InMemoryRepository) ClearSeriesName(_ context.Context, seriesName strin
 	defer r.mu.Unlock()
 
 	var count int64
-	for _, id := range r.order {
-		item, ok := r.data[id]
-		if !ok {
-			continue
-		}
-		if item.OwnerID != ownerID {
-			continue
-		}
+	for item := range r.ownedItems(ownerID) {
 		if item.ItemType == ItemTypeBook && item.SeriesName == seriesName {
 			item.SeriesName = ""
 			item.VolumeNumber = nil
 			item.TotalVolumes = nil
-			r.data[id] = item
+			r.data[item.ID] = item
 			count++
 		}
 	}
