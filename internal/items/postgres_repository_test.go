@@ -32,6 +32,14 @@ func TestPostgresRepositoryTargetedLookups(t *testing.T) {
 	assertTargetedLookups(t, NewPostgresRepository(db), createTestUser(t, db), createTestUser(t, db))
 }
 
+// The regression only shows on a database with a linguistic collation (for
+// example initdb --locale-provider=icu --icu-locale=en-US, or glibc en_US);
+// under a C-like collation the test passes either way.
+func TestPostgresRepositoryLetterFiltering(t *testing.T) {
+	db := testdb.Open(t)
+	assertLetterFiltering(t, NewPostgresRepository(db), createTestUser(t, db))
+}
+
 func TestPostgresRepositoryOwnerIsolation(t *testing.T) {
 	db := testdb.Open(t)
 	repo := NewPostgresRepository(db)

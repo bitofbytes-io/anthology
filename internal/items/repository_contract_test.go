@@ -111,3 +111,58 @@ func assertTargetedLookups(t *testing.T, repo Repository, ownerA, ownerB uuid.UU
 func TestInMemoryRepositoryTargetedLookups(t *testing.T) {
 	assertTargetedLookups(t, NewInMemoryRepository(nil), uuid.New(), uuid.New())
 }
+
+// assertLetterFiltering checks that every title counted in a histogram bucket
+// is returned by the matching letter filter, including titles that start with
+// an accented letter (counted under "#").
+func assertLetterFiltering(t *testing.T, repo Repository, owner uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+	for i, title := range []string{"Émile", "éclair", "Apple", " zebra", "42 Things", "Ørsted"} {
+		if _, err := repo.Create(ctx, Item{
+			ID:            uuid.New(),
+			OwnerID:       owner,
+			Title:         title,
+			ItemType:      ItemTypeBook,
+			ReadingStatus: BookStatusNone,
+			CreatedAt:     now.Add(time.Duration(i) * time.Second),
+			UpdatedAt:     now.Add(time.Duration(i) * time.Second),
+		}); err != nil {
+			t.Fatalf("create %q: %v", title, err)
+		}
+	}
+
+	histogram, err := repo.Histogram(ctx, HistogramOptions{OwnerID: owner})
+	if err != nil {
+		t.Fatalf("Histogram: %v", err)
+	}
+	want := LetterHistogram{"A": 1, "Z": 1, "#": 4}
+	if len(histogram) != len(want) {
+		t.Fatalf("Histogram = %v, want %v", histogram, want)
+	}
+	for letter, count := range want {
+		if histogram[letter] != count {
+			t.Fatalf("Histogram = %v, want %v", histogram, want)
+		}
+	}
+
+	for letter, count := range histogram {
+		initial := letter
+		listed, err := repo.List(ctx, ListOptions{OwnerID: owner, Initial: &initial})
+		if err != nil {
+			t.Fatalf("List(%q): %v", letter, err)
+		}
+		if len(listed) != count {
+			titles := make([]string, 0, len(listed))
+			for _, item := range listed {
+				titles = append(titles, item.Title)
+			}
+			t.Fatalf("List(%q) returned %v; histogram counted %d", letter, titles, count)
+		}
+	}
+}
+
+func TestInMemoryRepositoryLetterFiltering(t *testing.T) {
+	assertLetterFiltering(t, NewInMemoryRepository(nil), uuid.New())
+}

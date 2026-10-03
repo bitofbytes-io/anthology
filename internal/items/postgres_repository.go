@@ -162,9 +162,9 @@ func (r *PostgresRepository) List(ctx context.Context, opts ListOptions) ([]Item
 	if opts.Initial != nil {
 		initial := strings.ToUpper(strings.TrimSpace(*opts.Initial))
 		if initial == "#" {
-			clauses = append(clauses, "NOT (upper(substr(trim(i.title), 1, 1)) BETWEEN 'A' AND 'Z')")
+			clauses = append(clauses, "NOT ("+titleInitialSQL("i.title")+" BETWEEN 'A' AND 'Z')")
 		} else {
-			clauses = append(clauses, fmt.Sprintf("upper(substr(trim(i.title), 1, 1)) = $%d", len(args)+1))
+			clauses = append(clauses, fmt.Sprintf("%s = $%d", titleInitialSQL("i.title"), len(args)+1))
 			args = append(args, initial)
 		}
 	}
@@ -313,13 +313,23 @@ func (r *PostgresRepository) Delete(ctx context.Context, id uuid.UUID, ownerID u
 	return nil
 }
 
+// titleInitialSQL returns the upper-cased first character of column under the
+// "C" collation. The letter filter and the histogram both compare it with
+// BETWEEN 'A' AND 'Z', and under a linguistic collation such as en_US 'É' sorts
+// inside that range: accented titles got their own histogram bucket but
+// matched no rail letter. With "C" only ASCII A-Z count as letters and
+// everything else falls under "#", matching the in-memory repository.
+func titleInitialSQL(column string) string {
+	return `upper(substr(trim(` + column + `), 1, 1)) COLLATE "C"`
+}
+
 // Histogram returns a count of items grouped by first letter of title.
 func (r *PostgresRepository) Histogram(ctx context.Context, opts HistogramOptions) (LetterHistogram, error) {
 	query := `
 SELECT
     CASE
-        WHEN upper(substr(trim(title), 1, 1)) BETWEEN 'A' AND 'Z'
-        THEN upper(substr(trim(title), 1, 1))
+        WHEN ` + titleInitialSQL("title") + ` BETWEEN 'A' AND 'Z'
+        THEN ` + titleInitialSQL("title") + `
         ELSE '#'
     END AS letter,
     COUNT(*) AS count
