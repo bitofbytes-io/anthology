@@ -59,7 +59,8 @@ export class CsvImportComponent {
         const input = event.target as HTMLInputElement | null;
         const file = input?.files?.[0] ?? null;
 
-        this.summary.set(null);
+        // A rejected file leaves the previous summary on screen; only a newly
+        // selected file replaces it.
         const validationError = this.validateCsvFile(file);
         this.error.set(validationError);
         if (validationError) {
@@ -68,6 +69,7 @@ export class CsvImportComponent {
             return;
         }
 
+        this.summary.set(null);
         this.selectedFile.set(file);
     }
 

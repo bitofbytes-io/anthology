@@ -83,16 +83,17 @@ func (r *PostgresRepository) CreateUser(ctx context.Context, user User) (User, e
 	return user, nil
 }
 
-// UpdateUserLogin updates the user's last login time and refreshes profile data.
-func (r *PostgresRepository) UpdateUserLogin(ctx context.Context, id uuid.UUID, name, avatarURL string) error {
+// UpdateUserLogin updates the user's last login time and refreshes the email
+// and profile data from the latest Google sign-in.
+func (r *PostgresRepository) UpdateUserLogin(ctx context.Context, id uuid.UUID, email, name, avatarURL string) error {
 	const query = `
 		UPDATE users
-		SET name = $2, avatar_url = $3, last_login_at = $4, updated_at = $4
+		SET email = $2, name = $3, avatar_url = $4, last_login_at = $5, updated_at = $5
 		WHERE id = $1
 	`
 
 	now := time.Now()
-	_, err := r.db.ExecContext(ctx, query, id, name, avatarURL, now)
+	_, err := r.db.ExecContext(ctx, query, id, email, name, avatarURL, now)
 	return err
 }
 

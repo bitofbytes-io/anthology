@@ -668,17 +668,26 @@ func IsISBN(value string) bool {
 }
 
 // isbnLookupKeys returns the match keys a scanned ISBN may be stored under: its
-// own normalized form and the equivalent ISBN-13 or ISBN-10, so a scan of
-// either form finds a book saved with the other. Only 978-prefixed ISBN-13s
-// have an ISBN-10 form. It returns nil when value is not an ISBN.
+// own normalized form and, when its check digit is valid, the equivalent
+// ISBN-13 or ISBN-10, so a scan of either form finds a book saved with the
+// other. Only 978-prefixed ISBN-13s have an ISBN-10 form. A code with a wrong
+// check digit (a misread) matches only itself: converting it would recompute
+// the check digit and could match a different, valid ISBN. It returns nil when
+// value is not an ISBN.
 func isbnLookupKeys(value string) []string {
 	key := normalizeISBN(value)
 	switch len(key) {
 	case 10:
-		return []string{key, isbn10To13(key)}
+		if isbn13 := isbn10To13(key); isbn13To10(isbn13) == key {
+			return []string{key, isbn13}
+		}
+		return []string{key}
 	case 13:
-		if strings.HasPrefix(key, "978") {
-			return []string{key, isbn13To10(key)}
+		if !strings.HasPrefix(key, "978") {
+			return []string{key}
+		}
+		if isbn10 := isbn13To10(key); isbn10To13(isbn10) == key {
+			return []string{key, isbn10}
 		}
 		return []string{key}
 	default:

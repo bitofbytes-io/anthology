@@ -95,6 +95,11 @@ func assertTargetedLookups(t *testing.T, repo Repository, ownerA, ownerB uuid.UU
 	if err != nil || found.ID != checkDigitX.ID {
 		t.Fatalf("FindByISBN ISBN-13 scan of an ISBN-10 book = %s, %v; want %s", found.ID, err, checkDigitX.ID)
 	}
+	for _, misread := range []string{"0306406153", "9780804429574"} {
+		if _, err := repo.FindByISBN(ctx, misread, ownerA); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("FindByISBN(%q) with a wrong check digit matched across forms: %v", misread, err)
+		}
+	}
 	if _, err := repo.FindByISBN(ctx, "9790306406157", ownerA); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("FindByISBN matched a 979 ISBN-13 to an ISBN-10 book: %v", err)
 	}

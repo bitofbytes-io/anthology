@@ -11,7 +11,7 @@ import (
 type authRepoStub struct {
 	findUserByOAuth       func(ctx context.Context, provider, providerID string) (*auth.User, error)
 	createUser            func(ctx context.Context, user auth.User) (auth.User, error)
-	updateUserLogin       func(ctx context.Context, id uuid.UUID, name, avatarURL string) error
+	updateUserLogin       func(ctx context.Context, id uuid.UUID, email, name, avatarURL string) error
 	createSession         func(ctx context.Context, session auth.Session, tokenHash string) error
 	findSessionByHash     func(ctx context.Context, tokenHash string) (*auth.Session, *auth.User, error)
 	deleteSession         func(ctx context.Context, id uuid.UUID) error
@@ -36,9 +36,9 @@ func (r *authRepoStub) CreateUser(ctx context.Context, user auth.User) (auth.Use
 	return user, nil
 }
 
-func (r *authRepoStub) UpdateUserLogin(ctx context.Context, id uuid.UUID, name, avatarURL string) error {
+func (r *authRepoStub) UpdateUserLogin(ctx context.Context, id uuid.UUID, email, name, avatarURL string) error {
 	if r.updateUserLogin != nil {
-		return r.updateUserLogin(ctx, id, name, avatarURL)
+		return r.updateUserLogin(ctx, id, email, name, avatarURL)
 	}
 	return nil
 }

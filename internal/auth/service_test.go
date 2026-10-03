@@ -13,7 +13,7 @@ import (
 type repoStub struct {
 	findUserByOAuth       func(ctx context.Context, provider, providerID string) (*User, error)
 	createUser            func(ctx context.Context, user User) (User, error)
-	updateUserLogin       func(ctx context.Context, id uuid.UUID, name, avatarURL string) error
+	updateUserLogin       func(ctx context.Context, id uuid.UUID, email, name, avatarURL string) error
 	createSession         func(ctx context.Context, session Session, tokenHash string) error
 	findSessionByHash     func(ctx context.Context, tokenHash string) (*Session, *User, error)
 	deleteSession         func(ctx context.Context, id uuid.UUID) error
@@ -38,9 +38,9 @@ func (r *repoStub) CreateUser(ctx context.Context, user User) (User, error) {
 	return user, nil
 }
 
-func (r *repoStub) UpdateUserLogin(ctx context.Context, id uuid.UUID, name, avatarURL string) error {
+func (r *repoStub) UpdateUserLogin(ctx context.Context, id uuid.UUID, email, name, avatarURL string) error {
 	if r.updateUserLogin != nil {
-		return r.updateUserLogin(ctx, id, name, avatarURL)
+		return r.updateUserLogin(ctx, id, email, name, avatarURL)
 	}
 	return nil
 }
@@ -83,16 +83,17 @@ func TestServiceCreateOrUpdateUserExisting(t *testing.T) {
 		OAuthProvider:   "google",
 		OAuthProviderID: "sub-123",
 	}
-	var updatedName, updatedAvatar string
+	var updatedEmail, updatedName, updatedAvatar string
 
 	repo := &repoStub{
 		findUserByOAuth: func(ctx context.Context, provider, providerID string) (*User, error) {
 			return existing, nil
 		},
-		updateUserLogin: func(ctx context.Context, id uuid.UUID, name, avatarURL string) error {
+		updateUserLogin: func(ctx context.Context, id uuid.UUID, email, name, avatarURL string) error {
 			if id != userID {
 				return errors.New("unexpected id")
 			}
+			updatedEmail = email
 			updatedName = name
 			updatedAvatar = avatarURL
 			return nil
@@ -116,6 +117,11 @@ func TestServiceCreateOrUpdateUserExisting(t *testing.T) {
 	}
 	if updatedName != "New Name" || updatedAvatar != "new.png" {
 		t.Fatalf("expected UpdateUserLogin to be called with new profile, got name=%q avatar=%q", updatedName, updatedAvatar)
+	}
+	// The stored email follows the Google account, so the session allowlist
+	// check sees the address that was just approved at sign-in.
+	if updatedEmail != "user@example.com" || user.Email != "user@example.com" {
+		t.Fatalf("expected email to be refreshed to user@example.com, got stored=%q returned=%q", updatedEmail, user.Email)
 	}
 }
 

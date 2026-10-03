@@ -80,6 +80,23 @@ describe('CsvImportComponent', () => {
         expect(text('.csv-summary')).toContain('Imported 8 of 10 rows');
     });
 
+    it('keeps the previous summary when a rejected file is selected', () => {
+        const summary = {
+            totalRows: 1,
+            imported: 1,
+            skippedDuplicates: [],
+            failed: [],
+        } satisfies CsvImportSummary;
+        itemService.importCsv.mockReturnValue(of(summary));
+        select(csvFile());
+        component.handleSubmit();
+
+        select(new File(['x'], 'notes.txt', { type: 'text/plain' }));
+
+        expect(component.summary()).toEqual(summary);
+        expect(component.error()).toBe('Only CSV files are allowed.');
+    });
+
     it('reports busy while uploading', () => {
         const response = new Subject<CsvImportSummary>();
         itemService.importCsv.mockReturnValue(response);
