@@ -1,31 +1,37 @@
-import {
-    Component,
-    ElementRef,
-    EventEmitter,
-    Input,
-    Output,
-    ViewChild,
-    computed,
-    signal,
-} from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, ElementRef, inject, output, signal, viewChild } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { finalize } from 'rxjs';
 
 import { CsvImportSummary } from '../../../models/import';
+import { ItemService } from '../../../services/item.service';
 
 const CSV_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB - matches server limit
 const CSV_ALLOWED_MIME_TYPES = ['text/csv', 'application/vnd.ms-excel'];
 const CSV_ALLOWED_EXTENSIONS = ['.csv'];
+const CSV_FIELDS = [
+    'title',
+    'creator',
+    'itemType',
+    'releaseYear',
+    'pageCount',
+    'isbn13',
+    'isbn10',
+    'description',
+    'coverImage',
+    'notes',
+    'platform',
+    'ageGroup',
+    'playerCount',
+];
+const DEFAULT_IMPORT_ERROR = 'Import failed. Confirm the CSV matches the template.';
 
-type CsvImportStatusLevel = 'info' | 'success' | 'warning' | 'error';
-
-interface CsvImportStatus {
-    level: CsvImportStatusLevel;
-    icon: string;
-    message: string;
-}
-
+/**
+ * Owns the CSV import flow: file selection and validation, the upload, and the
+ * resulting summary or error.
+ */
 @Component({
     selector: 'app-csv-import',
     standalone: true,
@@ -34,102 +40,87 @@ interface CsvImportStatus {
     styleUrl: './csv-import.component.scss',
 })
 export class CsvImportComponent {
-    @Input({ required: true }) csvFields: string[] = [];
-    @Input({ required: true }) csvTemplateUrl = '';
-    @Input() importBusy = false;
-    @Input() importSummary: CsvImportSummary | null = null;
-    @Input() importError: string | null = null;
+    private readonly itemService = inject(ItemService);
 
-    @Output() fileSelected = new EventEmitter<File>();
-    @Output() importSubmit = new EventEmitter<void>();
-    @Output() cleared = new EventEmitter<void>();
+    /** Emits true while an upload is in flight, so the page can keep this tab open. */
+    readonly busyChange = output<boolean>();
 
-    @ViewChild('csvInput') csvInput?: ElementRef<HTMLInputElement>;
+    private readonly csvInput = viewChild<ElementRef<HTMLInputElement>>('csvInput');
+
+    readonly csvFields = CSV_FIELDS;
+    readonly csvTemplateUrl = '/csv-import-template.csv';
 
     readonly selectedFile = signal<File | null>(null);
-
-    readonly csvImportStatus = computed<CsvImportStatus | null>(() => {
-        if (this.importBusy) {
-            return {
-                level: 'info',
-                icon: 'autorenew',
-                message: 'Importing CSV...',
-            };
-        }
-
-        if (this.importError) {
-            return {
-                level: 'error',
-                icon: 'error',
-                message: this.importError,
-            };
-        }
-
-        const summary = this.importSummary;
-        if (summary) {
-            const totalRows = summary.totalRows ?? 0;
-            const imported = summary.imported ?? 0;
-            const notImported = Math.max(totalRows - imported, 0);
-            const baseMessage = `Imported ${imported} of ${totalRows} rows.`;
-
-            if (notImported > 0) {
-                return {
-                    level: 'warning',
-                    icon: 'error_outline',
-                    message: `${baseMessage} Not imported ${notImported} rows.`,
-                };
-            }
-
-            return {
-                level: 'success',
-                icon: 'check_circle',
-                message: baseMessage,
-            };
-        }
-
-        return null;
-    });
+    readonly busy = signal(false);
+    readonly summary = signal<CsvImportSummary | null>(null);
+    readonly error = signal<string | null>(null);
 
     handleFileChange(event: Event): void {
         const input = event.target as HTMLInputElement | null;
         const file = input?.files?.[0] ?? null;
 
+        // A rejected file leaves the previous summary on screen; only a newly
+        // selected file replaces it.
         const validationError = this.validateCsvFile(file);
+        this.error.set(validationError);
         if (validationError) {
             this.selectedFile.set(null);
             this.resetInput();
             return;
         }
 
+        this.summary.set(null);
         this.selectedFile.set(file);
-        if (file) {
-            this.fileSelected.emit(file);
-        }
     }
 
     handleSubmit(event?: Event): void {
         event?.preventDefault();
         event?.stopPropagation();
 
-        const fileFromInput = this.csvInput?.nativeElement?.files?.[0] ?? null;
-        const file = this.selectedFile() ?? fileFromInput;
-        if (!file || this.importBusy) {
+        const file = this.selectedFile() ?? this.csvInput()?.nativeElement.files?.[0] ?? null;
+        if (!file || this.busy()) {
             return;
         }
 
         const validationError = this.validateCsvFile(file);
         if (validationError) {
+            this.error.set(validationError);
             return;
         }
 
-        this.selectedFile.set(file);
-        this.importSubmit.emit();
+        this.setBusy(true);
+        this.error.set(null);
+        this.summary.set(null);
+
+        // Not tied to this component's lifetime: the page keeps the tab open
+        // while busy, and an abandoned request would cut the import short.
+        this.itemService
+            .importCsv(file)
+            .pipe(finalize(() => this.setBusy(false)))
+            .subscribe({
+                next: (summary) => {
+                    this.summary.set({
+                        ...summary,
+                        skippedDuplicates: summary.skippedDuplicates ?? [],
+                        failed: summary.failed ?? [],
+                    });
+                    this.clearSelectedFile();
+                },
+                error: (error: unknown) => {
+                    this.error.set(importErrorMessage(error));
+                },
+            });
     }
 
     handleReset(): void {
-        this.selectedFile.set(null);
-        this.resetInput();
-        this.cleared.emit();
+        this.clearSelectedFile();
+        this.summary.set(null);
+        this.error.set(null);
+    }
+
+    private setBusy(busy: boolean): void {
+        this.busy.set(busy);
+        this.busyChange.emit(busy);
     }
 
     private validateCsvFile(file: File | null): string | null {
@@ -155,14 +146,26 @@ export class CsvImportComponent {
         return null;
     }
 
-    private resetInput(): void {
-        if (this.csvInput?.nativeElement) {
-            this.csvInput.nativeElement.value = '';
-        }
-    }
-
-    clearSelectedFile(): void {
+    private clearSelectedFile(): void {
         this.selectedFile.set(null);
         this.resetInput();
     }
+
+    private resetInput(): void {
+        const input = this.csvInput()?.nativeElement;
+        if (input) {
+            input.value = '';
+        }
+    }
+}
+
+function importErrorMessage(error: unknown): string {
+    if (error instanceof HttpErrorResponse) {
+        const serverMessage =
+            typeof error.error?.error === 'string' ? error.error.error.trim() : '';
+        if (serverMessage) {
+            return serverMessage;
+        }
+    }
+    return DEFAULT_IMPORT_ERROR;
 }

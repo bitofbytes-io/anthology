@@ -18,7 +18,7 @@ import (
 
 func TestSessionHandlerStatusWithNoCookie(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	authService := auth.NewService(&authRepoStub{}, time.Hour)
+	authService := auth.NewService(&authRepoStub{}, time.Hour, nil)
 	handler := NewSessionHandler(authService, "development", logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session", nil)
@@ -48,7 +48,7 @@ func TestSessionHandlerStatusWithValidSession(t *testing.T) {
 			return &auth.Session{ID: uuid.New(), ExpiresAt: time.Now().Add(time.Minute)}, expectedUser, nil
 		},
 	}
-	authService := auth.NewService(repo, time.Hour)
+	authService := auth.NewService(repo, time.Hour, nil)
 	handler := NewSessionHandler(authService, "development", logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session", nil)
@@ -85,7 +85,7 @@ func TestSessionHandlerStatusWithInvalidSession(t *testing.T) {
 			return nil, nil, nil
 		},
 	}
-	authService := auth.NewService(repo, time.Hour)
+	authService := auth.NewService(repo, time.Hour, nil)
 	handler := NewSessionHandler(authService, "development", logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session", nil)
@@ -117,7 +117,7 @@ func TestSessionHandlerLogoutDeletesSession(t *testing.T) {
 			return nil
 		},
 	}
-	authService := auth.NewService(repo, time.Hour)
+	authService := auth.NewService(repo, time.Hour, nil)
 	handler := NewSessionHandler(authService, "development", logger)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/session", nil)
@@ -141,13 +141,12 @@ func TestClientIPFromRequestRemoteAddr(t *testing.T) {
 	}
 }
 
-func TestClientIPFromRequestForwardedFor(t *testing.T) {
-	// Note: In production, chi's RealIP middleware processes X-Forwarded-For
-	// and sets RemoteAddr. This test verifies that our function correctly
-	// extracts from RemoteAddr (which would already be set by the middleware).
+func TestClientIPFromRequestIgnoresForwardedHeaders(t *testing.T) {
+	// Forwarding headers are client-controlled, so only RemoteAddr counts.
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	// Simulate chi's RealIP middleware having already set RemoteAddr
 	req.RemoteAddr = "198.51.100.7:8080"
+	req.Header.Set("X-Forwarded-For", "203.0.113.9")
+	req.Header.Set("X-Real-IP", "203.0.113.9")
 
 	ip := clientIPFromRequest(req)
 	if ip != "198.51.100.7" {

@@ -30,10 +30,24 @@ func (h *ShelfHandler) handleShelfError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "no results found for scanned barcode")
 	case errors.Is(err, shelves.ErrValidation):
 		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, items.ErrValidation):
+		writeError(w, http.StatusBadRequest, itemValidationMessage(err))
+	case errors.Is(err, shelves.ErrDuplicateName):
+		writeError(w, http.StatusConflict, err.Error())
 	default:
 		h.logger.Error("shelf operation failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "unexpected error")
 	}
+}
+
+// itemValidationMessage returns the client-safe message of an item validation
+// error, without the context the shelf service wraps around it.
+func itemValidationMessage(err error) string {
+	var validation *items.ValidationError
+	if errors.As(err, &validation) {
+		return validation.Message
+	}
+	return err.Error()
 }
 
 // NewShelfHandler constructs a ShelfHandler.

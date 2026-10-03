@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -62,15 +63,15 @@ func main() {
 
 	// Initialize auth (always required)
 	authRepo := auth.NewPostgresRepository(db)
-	authService := auth.NewService(authRepo, 12*time.Hour)
+	allowlist := auth.NewAllowlist(cfg.GoogleAllowedDomains, cfg.GoogleAllowedEmails)
+	authService := auth.NewService(authRepo, 12*time.Hour, allowlist.AllowsEmail)
 
 	googleAuth, err := auth.NewGoogleAuthenticator(
 		ctx,
 		cfg.GoogleClientID,
 		cfg.GoogleClientSecret,
 		cfg.GoogleRedirectURL,
-		cfg.GoogleAllowedDomains,
-		cfg.GoogleAllowedEmails,
+		allowlist,
 	)
 	if err != nil {
 		logger.Error("failed to initialize Google OAuth", "error", err)
@@ -94,9 +95,20 @@ func main() {
 		MaxHeaderBytes:    http.DefaultMaxHeaderBytes,
 	}
 
+	cleanupCtx, stopCleanup := context.WithCancel(ctx)
+	var cleanup sync.WaitGroup
+	cleanup.Add(1)
+	go func() {
+		defer cleanup.Done()
+		authService.ScheduleSessionCleanup(cleanupCtx, auth.SessionCleanupInterval, logger)
+	}()
+
 	logger.Info("Anthology API listening", "addr", srv.Addr, "version", version, "revision", revision)
-	if err := serve(ctx, srv, logger); err != nil {
-		logger.Error("http server error", "error", err)
+	serveErr := serve(ctx, srv, logger)
+	stopCleanup()
+	cleanup.Wait()
+	if serveErr != nil {
+		logger.Error("http server error", "error", serveErr)
 		os.Exit(1)
 	}
 }

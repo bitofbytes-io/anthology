@@ -13,7 +13,7 @@ import (
 func TestPostgresRepositorySessionExpiryAndDeletion(t *testing.T) {
 	db := testdb.Open(t)
 	repo := NewPostgresRepository(db)
-	svc := NewService(repo, time.Hour)
+	svc := NewService(repo, time.Hour, nil)
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
@@ -100,5 +100,38 @@ func TestPostgresRepositorySessionExpiryAndDeletion(t *testing.T) {
 	}
 	if got, err := svc.ValidateSession(ctx, validToken); err != nil || got != nil {
 		t.Fatalf("ValidateSession after logout = %+v, %v; want nil", got, err)
+	}
+}
+
+// A Google account whose email changes keeps its sub. Signing in again must
+// store the new email so the per-request allowlist check accepts the session.
+func TestPostgresSignInRefreshesChangedEmail(t *testing.T) {
+	db := testdb.Open(t)
+	repo := NewPostgresRepository(db)
+	ctx := context.Background()
+	sub := uuid.NewString()
+	oldEmail, newEmail := sub+"-old@example.com", sub+"-new@example.com"
+
+	user, err := NewService(repo, time.Hour, nil).CreateOrUpdateUser(ctx, &GoogleClaims{Sub: sub, Email: oldEmail, Name: "Renamed"})
+	if err != nil {
+		t.Fatalf("first sign-in: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM users WHERE id=$1`, user.ID) })
+
+	svc := NewService(repo, time.Hour, NewAllowlist(nil, []string{newEmail}).AllowsEmail)
+	again, err := svc.CreateOrUpdateUser(ctx, &GoogleClaims{Sub: sub, Email: newEmail, Name: "Renamed"})
+	if err != nil {
+		t.Fatalf("second sign-in: %v", err)
+	}
+	if again.ID != user.ID || again.Email != newEmail {
+		t.Fatalf("second sign-in returned %s %q; want %s %q", again.ID, again.Email, user.ID, newEmail)
+	}
+	token, err := svc.CreateSession(ctx, again.ID, "test", "127.0.0.1")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	validated, err := svc.ValidateSession(ctx, token)
+	if err != nil || validated == nil || validated.Email != newEmail {
+		t.Fatalf("ValidateSession = %+v, %v; want user with %q", validated, err, newEmail)
 	}
 }

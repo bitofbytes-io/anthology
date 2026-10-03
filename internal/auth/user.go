@@ -36,4 +36,7 @@ type GoogleClaims struct {
 	EmailVerified bool   `json:"email_verified"`
 	Name          string `json:"name"`
 	Picture       string `json:"picture"`
+	// HostedDomain is Google's hd claim: the Workspace domain that manages the
+	// account. It is empty for consumer Google accounts.
+	HostedDomain string `json:"hd"`
 }

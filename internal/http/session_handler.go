@@ -111,11 +111,11 @@ func (h *SessionHandler) CurrentUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// clientIPFromRequest extracts the originating IP address, normalizing away any port
-// so rate limiting buckets attempts by IP regardless of ephemeral ports.
-// Note: chi's RealIP middleware (configured in router.go) has already processed
-// X-Forwarded-For and X-Real-IP headers and set r.RemoteAddr appropriately.
-// We rely on that middleware instead of parsing headers directly to avoid spoofing.
+// clientIPFromRequest returns the host part of r.RemoteAddr for the session's
+// ip_address column. It is the direct peer (in production, the reverse proxy),
+// not necessarily the end user. Forwarding headers such as X-Forwarded-For are
+// deliberately ignored because a client can set them; the value is only
+// recorded for reference and is not used for any access decision.
 func clientIPFromRequest(r *http.Request) string {
 	ip := r.RemoteAddr
 

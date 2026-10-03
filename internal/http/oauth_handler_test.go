@@ -47,7 +47,7 @@ func (f *fakeGoogleAuthenticator) Exchange(ctx context.Context, code string) (*a
 	return f.exchangeClaims, nil
 }
 
-func (f *fakeGoogleAuthenticator) IsEmailAllowed(email string) bool {
+func (f *fakeGoogleAuthenticator) IsAllowed(claims *auth.GoogleClaims) bool {
 	return f.allowEmail
 }
 
@@ -236,7 +236,7 @@ func TestOAuthCallbackHandlesUserCreationError(t *testing.T) {
 			return nil, errors.New("db down")
 		},
 	}
-	authService := auth.NewService(repo, time.Hour)
+	authService := auth.NewService(repo, time.Hour, nil)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewOAuthHandler(google, authService, "http://frontend.test", "development", logger)
 
@@ -265,7 +265,7 @@ func TestOAuthCallbackHandlesSessionCreationError(t *testing.T) {
 			return errors.New("session fail")
 		},
 	}
-	authService := auth.NewService(repo, time.Hour)
+	authService := auth.NewService(repo, time.Hour, nil)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewOAuthHandler(google, authService, "http://frontend.test", "development", logger)
 
@@ -291,7 +291,7 @@ func TestOAuthCallbackSuccessRedirectsToFrontend(t *testing.T) {
 			return user, nil
 		},
 	}
-	authService := auth.NewService(repo, time.Hour)
+	authService := auth.NewService(repo, time.Hour, nil)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewOAuthHandler(google, authService, "http://frontend.test", "development", logger)
 
@@ -333,7 +333,7 @@ func TestOAuthCallbackSanitizesRedirectTo(t *testing.T) {
 			return user, nil
 		},
 	}
-	authService := auth.NewService(repo, time.Hour)
+	authService := auth.NewService(repo, time.Hour, nil)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewOAuthHandler(google, authService, "http://frontend.test", "development", logger)
 

@@ -33,6 +33,12 @@ func (m *inMemoryRepository) CreateShelf(ctx context.Context, shelf Shelf, rows 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	for _, existing := range m.shelves {
+		if existing.OwnerID == shelf.OwnerID && existing.Name == shelf.Name {
+			return ShelfWithLayout{}, ErrDuplicateName
+		}
+	}
+
 	m.shelves[shelf.ID] = shelf
 	m.rows[shelf.ID] = slices.Clone(rows)
 	m.columns[shelf.ID] = slices.Clone(columns)

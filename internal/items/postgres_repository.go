@@ -162,9 +162,9 @@ func (r *PostgresRepository) List(ctx context.Context, opts ListOptions) ([]Item
 	if opts.Initial != nil {
 		initial := strings.ToUpper(strings.TrimSpace(*opts.Initial))
 		if initial == "#" {
-			clauses = append(clauses, "NOT (upper(substr(trim(i.title), 1, 1)) BETWEEN 'A' AND 'Z')")
+			clauses = append(clauses, "NOT ("+titleInitialSQL("i.title")+" BETWEEN 'A' AND 'Z')")
 		} else {
-			clauses = append(clauses, fmt.Sprintf("upper(substr(trim(i.title), 1, 1)) = $%d", len(args)+1))
+			clauses = append(clauses, fmt.Sprintf("%s = $%d", titleInitialSQL("i.title"), len(args)+1))
 			args = append(args, initial)
 		}
 	}
@@ -227,25 +227,26 @@ func (r *PostgresRepository) ListByIDs(ctx context.Context, ids []uuid.UUID, own
 	return items, nil
 }
 
-// FindByISBN returns the owner's most recently created book matching isbn
-// against either ISBN column (see normalizeISBN and isbnMatchKey).
+// FindByISBN returns the owner's most recently created book matching isbn, in
+// either its ISBN-10 or ISBN-13 form, against either ISBN column (see
+// isbnLookupKeys and isbnMatchKey).
 //
 // The per-row regexp_replace is not index-backed, but the owner_id predicate
 // uses idx_items_owner_id, so the scan is bounded by one personal library.
 func (r *PostgresRepository) FindByISBN(ctx context.Context, isbn string, ownerID uuid.UUID) (Item, error) {
-	normalized := normalizeISBN(isbn)
-	if normalized == "" {
+	keys := isbnLookupKeys(isbn)
+	if len(keys) == 0 {
 		return Item{}, ErrNotFound
 	}
 
 	query := baseSelect + ` WHERE i.owner_id = $1
   AND i.item_type = 'book'
-  AND (upper(regexp_replace(i.isbn_13, '[^0-9Xx]', '', 'g')) = $2 OR upper(regexp_replace(i.isbn_10, '[^0-9Xx]', '', 'g')) = $2)
+  AND (upper(regexp_replace(i.isbn_13, '[^0-9Xx]', '', 'g')) = ANY($2) OR upper(regexp_replace(i.isbn_10, '[^0-9Xx]', '', 'g')) = ANY($2))
 ORDER BY i.created_at DESC, i.title ASC
 LIMIT 1`
 
 	var row itemRow
-	if err := r.db.GetContext(ctx, &row, query, ownerID, normalized); err != nil {
+	if err := r.db.GetContext(ctx, &row, query, ownerID, pq.Array(keys)); err != nil {
 		if err == sql.ErrNoRows {
 			return Item{}, ErrNotFound
 		}
@@ -312,13 +313,23 @@ func (r *PostgresRepository) Delete(ctx context.Context, id uuid.UUID, ownerID u
 	return nil
 }
 
+// titleInitialSQL returns the upper-cased first character of column under the
+// "C" collation. The letter filter and the histogram both compare it with
+// BETWEEN 'A' AND 'Z', and under a linguistic collation such as en_US 'É' sorts
+// inside that range: accented titles got their own histogram bucket but
+// matched no rail letter. With "C" only ASCII A-Z count as letters and
+// everything else falls under "#", matching the in-memory repository.
+func titleInitialSQL(column string) string {
+	return `upper(substr(trim(` + column + `), 1, 1)) COLLATE "C"`
+}
+
 // Histogram returns a count of items grouped by first letter of title.
 func (r *PostgresRepository) Histogram(ctx context.Context, opts HistogramOptions) (LetterHistogram, error) {
 	query := `
 SELECT
     CASE
-        WHEN upper(substr(trim(title), 1, 1)) BETWEEN 'A' AND 'Z'
-        THEN upper(substr(trim(title), 1, 1))
+        WHEN ` + titleInitialSQL("title") + ` BETWEEN 'A' AND 'Z'
+        THEN ` + titleInitialSQL("title") + `
         ELSE '#'
     END AS letter,
     COUNT(*) AS count
