@@ -13,7 +13,7 @@ import (
 func TestPostgresRepositorySessionExpiryAndDeletion(t *testing.T) {
 	db := testdb.Open(t)
 	repo := NewPostgresRepository(db)
-	svc := NewService(repo, time.Hour)
+	svc := NewService(repo, time.Hour, nil)
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 

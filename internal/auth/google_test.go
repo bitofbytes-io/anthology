@@ -1,75 +1,32 @@
 package auth
 
 import (
+	"encoding/json"
 	"net/url"
 	"testing"
 
 	"golang.org/x/oauth2"
 )
 
-func TestIsEmailAllowedByEmailAllowlist(t *testing.T) {
-	authenticator := &GoogleAuthenticator{
-		allowedEmails: map[string]struct{}{
-			"test@example.com": {},
-		},
-		allowedDomains: map[string]struct{}{},
-	}
-
-	if !authenticator.IsEmailAllowed("Test@Example.com") {
-		t.Fatal("expected email to be allowed")
-	}
-}
-
-func TestIsEmailAllowedByDomainAllowlist(t *testing.T) {
-	authenticator := &GoogleAuthenticator{
-		allowedDomains: map[string]struct{}{
-			"example.com": {},
-		},
-		allowedEmails: map[string]struct{}{},
-	}
-
-	if !authenticator.IsEmailAllowed("user@example.com") {
-		t.Fatal("expected domain to be allowed")
-	}
-}
-
-func TestIsEmailAllowedRejectsUnknown(t *testing.T) {
-	authenticator := &GoogleAuthenticator{
-		allowedDomains: map[string]struct{}{
-			"example.com": {},
-		},
-		allowedEmails: map[string]struct{}{},
-	}
-
-	if authenticator.IsEmailAllowed("user@other.com") {
-		t.Fatal("expected email to be rejected")
-	}
-}
-
-func TestIsEmailAllowedAllowsAllWhenNoAllowlist(t *testing.T) {
-	authenticator := &GoogleAuthenticator{
-		allowedDomains: map[string]struct{}{},
-		allowedEmails:  map[string]struct{}{},
-	}
-
-	if !authenticator.IsEmailAllowed("user@other.com") {
-		t.Fatal("expected email to be allowed when no allowlist is configured")
-	}
-}
-
 func TestHasAllowlist(t *testing.T) {
-	authenticator := &GoogleAuthenticator{
-		allowedDomains: map[string]struct{}{},
-		allowedEmails:  map[string]struct{}{},
-	}
-
-	if authenticator.HasAllowlist() {
+	if (&GoogleAuthenticator{}).HasAllowlist() {
 		t.Fatal("expected HasAllowlist to be false")
 	}
 
-	authenticator.allowedDomains["example.com"] = struct{}{}
+	authenticator := &GoogleAuthenticator{allowlist: NewAllowlist([]string{"example.com"}, nil)}
 	if !authenticator.HasAllowlist() {
 		t.Fatal("expected HasAllowlist to be true")
+	}
+}
+
+func TestIsAllowedUsesAllowlist(t *testing.T) {
+	authenticator := &GoogleAuthenticator{allowlist: NewAllowlist([]string{"example.com"}, nil)}
+
+	if !authenticator.IsAllowed(&GoogleClaims{Email: "user@example.com", HostedDomain: "example.com"}) {
+		t.Fatal("expected Workspace account on an allowed domain to be allowed")
+	}
+	if authenticator.IsAllowed(&GoogleClaims{Email: "user@example.com"}) {
+		t.Fatal("expected account without an hd claim to be rejected by a domain rule")
 	}
 }
 
@@ -109,5 +66,15 @@ func TestAuthURLIncludesPromptSelectAccount(t *testing.T) {
 
 	if prompt := parsed.Query().Get("prompt"); prompt != "select_account" {
 		t.Fatalf("expected prompt=select_account, got %q", prompt)
+	}
+}
+
+func TestGoogleClaimsDecodeHostedDomain(t *testing.T) {
+	var claims GoogleClaims
+	if err := json.Unmarshal([]byte(`{"sub":"1","email":"user@example.com","hd":"example.com"}`), &claims); err != nil {
+		t.Fatalf("unmarshal claims: %v", err)
+	}
+	if claims.HostedDomain != "example.com" {
+		t.Fatalf("expected hd claim example.com, got %q", claims.HostedDomain)
 	}
 }

@@ -18,7 +18,7 @@ import (
 
 func TestAuthMiddlewareRejectsMissingCookie(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	authService := auth.NewService(&authRepoStub{}, time.Hour)
+	authService := auth.NewService(&authRepoStub{}, time.Hour, nil)
 	next := newAuthMiddleware(authService, logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -41,7 +41,7 @@ func TestAuthMiddlewareInjectsUser(t *testing.T) {
 			return &auth.Session{ID: uuid.New(), ExpiresAt: time.Now().Add(time.Minute)}, expectedUser, nil
 		},
 	}
-	authService := auth.NewService(repo, time.Hour)
+	authService := auth.NewService(repo, time.Hour, nil)
 
 	next := newAuthMiddleware(authService, logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user := UserFromContext(r.Context())
@@ -70,7 +70,7 @@ func TestAuthMiddlewareRejectsInvalidSession(t *testing.T) {
 			return nil, nil, nil
 		},
 	}
-	authService := auth.NewService(repo, time.Hour)
+	authService := auth.NewService(repo, time.Hour, nil)
 	next := newAuthMiddleware(authService, logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

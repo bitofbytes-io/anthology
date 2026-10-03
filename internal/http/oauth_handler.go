@@ -63,7 +63,7 @@ const (
 type googleAuthenticator interface {
 	AuthURL(state string) string
 	Exchange(ctx context.Context, code string) (*auth.GoogleClaims, error)
-	IsEmailAllowed(email string) bool
+	IsAllowed(claims *auth.GoogleClaims) bool
 }
 
 // OAuthHandler handles OAuth authentication endpoints.
@@ -204,7 +204,7 @@ func (h *OAuthHandler) CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check allowlist
-	if !h.google.IsEmailAllowed(claims.Email) {
+	if !h.google.IsAllowed(claims) {
 		h.logger.Warn("oauth callback: email not allowed", "email", claims.Email)
 		h.redirectWithError(w, r, "access_denied", "Your account is not authorized to access this application.")
 		return

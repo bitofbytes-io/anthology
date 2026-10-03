@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -14,14 +13,14 @@ import (
 
 // GoogleAuthenticator handles Google OAuth 2.0 / OIDC authentication.
 type GoogleAuthenticator struct {
-	config         *oauth2.Config
-	verifier       *oidc.IDTokenVerifier
-	allowedDomains map[string]struct{}
-	allowedEmails  map[string]struct{}
+	config    *oauth2.Config
+	verifier  *oidc.IDTokenVerifier
+	allowlist Allowlist
 }
 
-// NewGoogleAuthenticator creates a new GoogleAuthenticator.
-func NewGoogleAuthenticator(ctx context.Context, clientID, clientSecret, redirectURL string, allowedDomains, allowedEmails []string) (*GoogleAuthenticator, error) {
+// NewGoogleAuthenticator creates a new GoogleAuthenticator that admits sign-ins
+// permitted by allowlist.
+func NewGoogleAuthenticator(ctx context.Context, clientID, clientSecret, redirectURL string, allowlist Allowlist) (*GoogleAuthenticator, error) {
 	provider, err := oidc.NewProvider(ctx, "https://accounts.google.com")
 	if err != nil {
 		return nil, fmt.Errorf("oidc provider: %w", err)
@@ -37,27 +36,10 @@ func NewGoogleAuthenticator(ctx context.Context, clientID, clientSecret, redirec
 
 	verifier := provider.Verifier(&oidc.Config{ClientID: clientID})
 
-	domainSet := make(map[string]struct{}, len(allowedDomains))
-	for _, d := range allowedDomains {
-		d = strings.ToLower(strings.TrimSpace(d))
-		if d != "" {
-			domainSet[d] = struct{}{}
-		}
-	}
-
-	emailSet := make(map[string]struct{}, len(allowedEmails))
-	for _, e := range allowedEmails {
-		e = strings.ToLower(strings.TrimSpace(e))
-		if e != "" {
-			emailSet[e] = struct{}{}
-		}
-	}
-
 	return &GoogleAuthenticator{
-		config:         config,
-		verifier:       verifier,
-		allowedDomains: domainSet,
-		allowedEmails:  emailSet,
+		config:    config,
+		verifier:  verifier,
+		allowlist: allowlist,
 	}, nil
 }
 
@@ -95,31 +77,15 @@ func (g *GoogleAuthenticator) Exchange(ctx context.Context, code string) (*Googl
 	return &claims, nil
 }
 
-// IsEmailAllowed checks if the given email is allowed based on domain/email allowlists.
-func (g *GoogleAuthenticator) IsEmailAllowed(email string) bool {
-	email = strings.ToLower(strings.TrimSpace(email))
-
-	// Check explicit email allowlist
-	if _, ok := g.allowedEmails[email]; ok {
-		return true
-	}
-
-	// Check domain allowlist
-	parts := strings.Split(email, "@")
-	if len(parts) == 2 {
-		domain := parts[1]
-		if _, ok := g.allowedDomains[domain]; ok {
-			return true
-		}
-	}
-
-	// If both allowlists are empty, allow all (dev mode)
-	return len(g.allowedDomains) == 0 && len(g.allowedEmails) == 0
+// IsAllowed reports whether the signed-in Google account passes the allowlist.
+// Domain entries require Google's hd claim, not just the email suffix.
+func (g *GoogleAuthenticator) IsAllowed(claims *GoogleClaims) bool {
+	return g.allowlist.AllowsLogin(claims)
 }
 
 // HasAllowlist returns true if any allowlist restrictions are configured.
 func (g *GoogleAuthenticator) HasAllowlist() bool {
-	return len(g.allowedDomains) > 0 || len(g.allowedEmails) > 0
+	return !g.allowlist.IsEmpty()
 }
 
 // GenerateState generates a cryptographically secure random state string.

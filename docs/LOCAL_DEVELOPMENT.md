@@ -162,7 +162,7 @@ The redirect URI in your OAuth client doesn't match the one the application is u
 
 Your email is not in the allowlist. Check:
 1. `AUTH_GOOGLE_ALLOWED_EMAILS` includes your email address
-2. Or `AUTH_GOOGLE_ALLOWED_DOMAINS` includes your email domain
+2. Or `AUTH_GOOGLE_ALLOWED_DOMAINS` includes your email domain, and your account is managed by that Google Workspace domain (domain entries check Google's `hd` claim, so a personal Google account with an address on that domain is rejected)
 
 ### Database connection errors
 

@@ -44,7 +44,7 @@ FRONTEND_URL=http://localhost:4200
 ALLOWED_ORIGINS=http://localhost:4200
 ```
 
-Do not commit this file. `AUTH_GOOGLE_ALLOWED_DOMAINS` can replace or supplement `AUTH_GOOGLE_ALLOWED_EMAILS` with a comma-separated domain list.
+Do not commit this file. `AUTH_GOOGLE_ALLOWED_DOMAINS` can replace or supplement `AUTH_GOOGLE_ALLOWED_EMAILS` with a comma-separated list of Google Workspace domains; a domain entry admits only accounts whose Google `hd` (hosted domain) claim names that domain, not every address with that suffix. The allowlist is rechecked on every request, so removing an address or domain revokes its existing sessions. Expired sessions are purged at startup and daily.
 
 | Setting | Required | Purpose |
 | --- | --- | --- |

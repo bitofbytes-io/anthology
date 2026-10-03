@@ -49,6 +49,7 @@ This document summarizes application features based on the current API and UI co
 ## Authentication and sessions
 - Google OAuth is required in all environments; OAuth sets an HttpOnly session cookie for API access.
 - Session endpoints support status, current user, and logout.
+- Domain allowlist entries require Google's `hd` claim; the allowlist is rechecked on every request, and expired sessions are purged daily.
 
 ## API utilities
 - Health check endpoint for service status.
