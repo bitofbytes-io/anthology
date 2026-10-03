@@ -1,5 +1,14 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, DestroyRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
+import {
+    Component,
+    DestroyRef,
+    OnInit,
+    ViewChild,
+    computed,
+    inject,
+    signal,
+    viewChild,
+} from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
@@ -131,6 +140,7 @@ export class AddItemPageComponent implements OnInit {
     private readonly fb = inject(FormBuilder);
 
     @ViewChild('csvImport') csvImportComponent?: CsvImportComponent;
+    private readonly scannerPanel = viewChild(BarcodeScannerPanelComponent);
 
     readonly busy = signal(false);
     readonly lookupBusy = signal(false);
@@ -432,8 +442,23 @@ export class AddItemPageComponent implements OnInit {
             });
     }
 
-    private rejectScannedBarcode(): void {
+    toggleScanning(): void {
+        if (this.scanning()) {
+            this.scanning.set(false);
+            return;
+        }
+        this.lookupError.set(null);
+        this.scanning.set(true);
+    }
+
+    handleScannerFailed(message: string): void {
         this.scanning.set(false);
+        this.lookupError.set(message);
+    }
+
+    private rejectScannedBarcode(): void {
+        // Keep the camera open so the user can try another barcode.
+        this.scannerPanel()?.reportScanComplete();
         this.lookupError.set('That barcode was not valid. Try again or type the ISBN.');
     }
 

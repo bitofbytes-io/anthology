@@ -3,9 +3,7 @@
         <p>{{ instructions }}</p>
     </div>
 
-    @if (scannerStatus()) {
-        <p class="scanner-status" aria-live="polite">{{ scannerStatus() }}</p>
-    }
+    <p class="scanner-status" aria-live="polite">{{ scannerStatus() }}</p>
 
     <div class="scanner-preview">
         <video #scanVideo autoplay playsinline muted class="scanner-video"></video>

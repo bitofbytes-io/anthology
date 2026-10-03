@@ -125,6 +125,61 @@ describe('BarcodeScannerPanelComponent', () => {
         }
     });
 
+    it('does not start the scanner when deactivated before the start delay', async () => {
+        vi.useFakeTimers();
+        try {
+            fixture.componentRef.setInput('active', true);
+            fixture.detectChanges();
+            fixture.componentRef.setInput('active', false);
+            fixture.detectChanges();
+
+            await vi.advanceTimersByTimeAsync(200);
+
+            expect(scanner.startScanner).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('does not start the scanner when destroyed before the start delay', async () => {
+        vi.useFakeTimers();
+        try {
+            fixture.componentRef.setInput('active', true);
+            fixture.detectChanges();
+            fixture.destroy();
+
+            await vi.advanceTimersByTimeAsync(200);
+
+            expect(scanner.startScanner).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('emits scannerFailed when the scanner stops with an error after starting', async () => {
+        const failures: string[] = [];
+        fixture.componentInstance.scannerFailed.subscribe((message) => failures.push(message));
+        scanner.startScanner.mockImplementation(async () => {
+            scanner.scannerError.set('Camera access failed.');
+        });
+        (query('.scanner-section') as HTMLElement).scrollIntoView = vi.fn();
+
+        await fixture.componentInstance.startScanner();
+        fixture.detectChanges();
+
+        expect(failures).toEqual(['Camera access failed.']);
+    });
+
+    it('does not emit scannerFailed for errors it did not start', () => {
+        const failures: string[] = [];
+        fixture.componentInstance.scannerFailed.subscribe((message) => failures.push(message));
+
+        scanner.scannerError.set('Some error');
+        fixture.detectChanges();
+
+        expect(failures).toEqual([]);
+    });
+
     it('stops the scanner when destroyed', () => {
         fixture.destroy();
 

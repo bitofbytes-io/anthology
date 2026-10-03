@@ -109,7 +109,7 @@
                                         <button
                                             mat-stroked-button
                                             type="button"
-                                            (click)="scanning.set(!scanning())"
+                                            (click)="toggleScanning()"
                                             [disabled]="lookupBusy()"
                                         >
                                             <mat-icon aria-hidden="true">photo_camera</mat-icon>
@@ -128,6 +128,7 @@
                                         [active]="true"
                                         instructions="Once we read a code, we'll automatically run the lookup for you."
                                         (barcodeScanned)="handleDetectedBarcode($event)"
+                                        (scannerFailed)="handleScannerFailed($event)"
                                     ></app-barcode-scanner-panel>
                                 }
                             </div>
