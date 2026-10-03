@@ -605,6 +605,9 @@ func (s *Service) ScanAndAssign(ctx context.Context, shelfID, slotID uuid.UUID, 
 	if isbn == "" {
 		return ScanAndAssignResult{}, fmt.Errorf("%w: isbn is required", ErrValidation)
 	}
+	if !items.IsISBN(isbn) {
+		return ScanAndAssignResult{}, fmt.Errorf("%w: isbn must be an ISBN-10 or ISBN-13", ErrValidation)
+	}
 
 	// Verify shelf and slot exist
 	shelf, err := s.repo.GetShelf(ctx, shelfID, ownerID)

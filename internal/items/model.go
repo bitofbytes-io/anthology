@@ -277,8 +277,9 @@ type Repository interface {
 	// items belonging to other owners are omitted.
 	ListByIDs(ctx context.Context, ids []uuid.UUID, ownerID uuid.UUID) ([]Item, error)
 	// FindByISBN returns the owner's most recently created book whose ISBN-13
-	// or ISBN-10 matches isbn after normalizeISBN, or ErrNotFound. Inputs that
-	// are not a well-formed ISBN-10 or ISBN-13 never match.
+	// or ISBN-10 matches isbn in either form (see isbnLookupKeys), or
+	// ErrNotFound. Inputs that are not a well-formed ISBN-10 or ISBN-13 never
+	// match.
 	FindByISBN(ctx context.Context, isbn string, ownerID uuid.UUID) (Item, error)
 	Update(ctx context.Context, item Item) (Item, error)
 	Delete(ctx context.Context, id uuid.UUID, ownerID uuid.UUID) error
