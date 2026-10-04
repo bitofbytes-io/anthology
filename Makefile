@@ -159,7 +159,7 @@ docker-buildx-api: ensure-image-tag ## Build and push a multi-arch API image via
 		--build-arg SOURCE_URL=$(SOURCE_URL) \
 		$(API_OCI_LABEL_ARGS) \
 		-t $(API_IMAGE) \
-		$(if $(API_METADATA_FILE),--metadata-file $(API_METADATA_FILE)) \
+		$(if $(API_METADATA_FILE),--metadata-file "$(API_METADATA_FILE)") \
 		--push \
 		.
 
@@ -175,7 +175,7 @@ docker-buildx-ui: ensure-image-tag ## Build and push a multi-arch UI image via b
 		--build-arg SOURCE_URL=$(SOURCE_URL) \
 		$(UI_OCI_LABEL_ARGS) \
 		-t $(UI_IMAGE) \
-		$(if $(UI_METADATA_FILE),--metadata-file $(UI_METADATA_FILE)) \
+		$(if $(UI_METADATA_FILE),--metadata-file "$(UI_METADATA_FILE)") \
 		--push \
 		.
 
