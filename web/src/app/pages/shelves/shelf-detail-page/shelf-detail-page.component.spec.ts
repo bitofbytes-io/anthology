@@ -92,7 +92,7 @@ describe('Shelf layout removal confirmation', () => {
         const component = TestBed.createComponent(ShelfDetailPageComponent).componentInstance;
         component.shelf.set(layout());
         component.mode.set('edit');
-        component.resetLayoutForm();
+        component.resetLayout();
         return component;
     }
 
@@ -120,7 +120,7 @@ describe('Shelf layout removal confirmation', () => {
         page.saveLayout();
         decision.next('cancel');
         expect(service.updateLayout).not.toHaveBeenCalled();
-        expect(page.rows.length).toBe(2);
+        expect(page.layoutRows().length).toBe(2);
         expect(page.mode()).toBe('edit');
     });
 
@@ -151,7 +151,7 @@ describe('Shelf layout removal confirmation', () => {
             single.placements = single.placements.slice(0, 1);
             page.shelf.set(single);
             page.selectedSlot.set(single.slots[0]);
-            page.resetLayoutForm();
+            page.resetLayout();
             if (removal === 'row') {
                 page.removeRow(0);
             } else {
@@ -167,22 +167,94 @@ describe('Shelf layout removal confirmation', () => {
             decision.next('confirm');
             expect(service.updateLayout).toHaveBeenCalledExactlyOnceWith('shelf', []);
             expect(page.selectedSlot()).toBeNull();
-            expect(page.rows.length).toBe(0);
+            expect(page.layoutRows().length).toBe(0);
             page.startEdit();
             page.addRow();
-            expect(page.rows.length).toBe(1);
+            expect(page.layoutRows().length).toBe(1);
             page.saveLayout();
             expect(service.updateLayout.mock.calls[1][1]).toEqual([
                 expect.objectContaining({ newSlot: true, rowIndex: 0, colIndex: 0 }),
             ]);
         });
     }
+    it('keeps a row whose last column was removed until the row itself is removed', () => {
+        const page = component();
+        page.removeColumn({ rowIndex: 1, colIndex: 0 });
+        expect(page.layoutRows()).toEqual([
+            { rowIndex: 0, columns: [{ colIndex: 0 }] },
+            { rowIndex: 1, columns: [] },
+            { rowIndex: 2, columns: [{ colIndex: 0 }] },
+        ]);
+        expect(page.layoutSlots().map((slot) => [slot.slotId, slot.rowIndex])).toEqual([
+            ['slot0', 0],
+            ['slot2', 2],
+        ]);
+        page.removeRow(1);
+        expect(page.layoutSlots().map((slot) => [slot.slotId, slot.rowIndex])).toEqual([
+            ['slot0', 0],
+            ['slot2', 1],
+        ]);
+    });
+    it('copies the last column into a new column and saves resized slots', () => {
+        const page = component();
+        page.onSlotPositionChanged({
+            rowIndex: 0,
+            colIndex: 0,
+            position: { xStartNorm: 0.1, xEndNorm: 0.4, yStartNorm: 0.2, yEndNorm: 0.3 },
+        });
+        page.addColumn(0);
+        page.onLayoutSlotSelected({ rowIndex: 0, colIndex: 1 });
+        page.removeColumn({ rowIndex: 0, colIndex: 1 });
+        expect(page.activeLayoutSelection()).toBeNull();
+        page.addColumn(0);
+        page.saveLayout();
+        expect(service.updateLayout.mock.calls[0][1].slice(0, 2)).toEqual([
+            {
+                newSlot: undefined,
+                slotId: 'slot0',
+                rowIndex: 0,
+                colIndex: 0,
+                xStartNorm: 0.1,
+                xEndNorm: 0.4,
+                yStartNorm: 0.2,
+                yEndNorm: 0.3,
+            },
+            {
+                newSlot: true,
+                slotId: undefined,
+                rowIndex: 0,
+                colIndex: 1,
+                xStartNorm: 0.1,
+                xEndNorm: 0.4,
+                yStartNorm: 0.2,
+                yEndNorm: 0.3,
+            },
+        ]);
+    });
+    it('numbers slots by their position when stored row indexes have a gap', () => {
+        const page = component();
+        const gapped = layout();
+        gapped.rows = [gapped.rows[0], gapped.rows[2]];
+        gapped.slots = [gapped.slots[0], gapped.slots[2]];
+        page.shelf.set(gapped);
+        page.resetLayout();
+        expect(page.layoutSlots().map((slot) => [slot.slotId, slot.rowIndex])).toEqual([
+            ['slot0', 0],
+            ['slot2', 1],
+        ]);
+        page.onSlotPositionChanged({
+            rowIndex: 1,
+            colIndex: 0,
+            position: { xStartNorm: 0.5, xEndNorm: 1, yStartNorm: 0, yEndNorm: 1 },
+        });
+        expect(page.layoutSlots()[1].position.xStartNorm).toBe(0.5);
+    });
     it('shows displaced books and a library link after the final slot is removed', () => {
         const fixture = TestBed.createComponent(ShelfDetailPageComponent);
         const page = fixture.componentInstance;
         const original = layout();
         page.shelf.set(original);
-        page.resetLayoutForm();
+        page.resetLayout();
         page.removeRow(2);
         page.removeRow(1);
         page.removeRow(0);
