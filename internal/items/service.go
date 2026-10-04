@@ -73,7 +73,7 @@ func (s *Service) Create(ctx context.Context, input CreateItemInput) (Item, erro
 		VolumeNumber:   input.VolumeNumber,
 		TotalVolumes:   input.TotalVolumes,
 	}
-	if err := normalizeItem(&item); err != nil {
+	if err := normalizeItem(&item, true); err != nil {
 		return Item{}, err
 	}
 
@@ -111,7 +111,10 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID, ownerID uuid.UUID) (Ite
 }
 
 // Update applies patch to the stored item, then normalizes and validates the
-// result the same way Create does.
+// result the same way Create does. The cover image is checked only when the
+// patch sets it: rows saved before the current cover rules (such as HTTPS
+// only) may hold a cover those rules reject, and that must not block an edit
+// that leaves the cover alone.
 func (s *Service) Update(ctx context.Context, id uuid.UUID, ownerID uuid.UUID, patch ItemPatch) (Item, error) {
 	item, err := s.repo.Get(ctx, id, ownerID)
 	if err != nil {
@@ -120,7 +123,7 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, ownerID uuid.UUID, p
 	if err := patch.applyTo(&item); err != nil {
 		return Item{}, err
 	}
-	if err := normalizeItem(&item); err != nil {
+	if err := normalizeItem(&item, patch.sets("coverImage")); err != nil {
 		return Item{}, err
 	}
 	item.UpdatedAt = time.Now().UTC()
@@ -547,7 +550,8 @@ func validateItemType(itemType ItemType) error {
 // normalizeItem trims and validates an item's editable fields and clears the
 // ones its item type does not use. Create runs it on the new item, and Update
 // on the stored item with the patch applied, so both enforce the same rules.
-func normalizeItem(item *Item) error {
+// checkCover controls whether the cover image is sanitized and validated.
+func normalizeItem(item *Item, checkCover bool) error {
 	item.Title = strings.TrimSpace(item.Title)
 	if err := validateItemInput(item.Title, item.ItemType); err != nil {
 		return err
@@ -556,8 +560,10 @@ func normalizeItem(item *Item) error {
 	if err != nil {
 		return err
 	}
-	if item.CoverImage, err = sanitizeCoverImage(item.CoverImage); err != nil {
-		return err
+	if checkCover {
+		if item.CoverImage, err = sanitizeCoverImage(item.CoverImage); err != nil {
+			return err
+		}
 	}
 
 	item.Creator = strings.TrimSpace(item.Creator)

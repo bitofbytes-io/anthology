@@ -518,3 +518,39 @@ func TestItemCreateContract(t *testing.T) {
 		})
 	}
 }
+
+// TestItemUpdateContractLegacyCover covers a row saved before the current
+// cover rules: an edit that omits coverImage keeps it, and sending it back
+// unchanged is validated like any other cover.
+func TestItemUpdateContractLegacyCover(t *testing.T) {
+	legacy := items.Item{
+		ID:            uuid.New(),
+		OwnerID:       testOwnerID,
+		Title:         "Old Book",
+		ItemType:      items.ItemTypeBook,
+		CoverImage:    "http://example.com/old.jpg",
+		Format:        items.FormatUnknown,
+		ReadingStatus: items.BookStatusNone,
+		CreatedAt:     time.Date(2025, 11, 1, 0, 0, 0, 0, time.UTC),
+		UpdatedAt:     time.Date(2025, 11, 1, 0, 0, 0, 0, time.UTC),
+	}
+	svc := items.NewService(items.NewInMemoryRepository([]items.Item{legacy}))
+	handler := NewItemHandler(svc, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	rec := putItem(handler, legacy.ID.String(), `{"title":"Old Book, 2nd ed."}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body %s", rec.Code, rec.Body.String())
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got["title"] != "Old Book, 2nd ed." || got["coverImage"] != legacy.CoverImage {
+		t.Fatalf("unexpected item %v", got)
+	}
+
+	rec = putItem(handler, legacy.ID.String(), `{"title":"Old Book","coverImage":"http://example.com/old.jpg"}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "coverImage URL must use HTTPS") {
+		t.Fatalf("status = %d, body %s; want the cover rejected", rec.Code, rec.Body.String())
+	}
+}

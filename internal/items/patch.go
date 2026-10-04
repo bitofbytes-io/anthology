@@ -73,6 +73,12 @@ func ParseItemPatch(body []byte) (ItemPatch, error) {
 	return ItemPatch{fields: fields}, nil
 }
 
+// sets reports whether the patch contains key.
+func (p ItemPatch) sets(key string) bool {
+	_, ok := p.fields[key]
+	return ok
+}
+
 // applyTo decodes the patch onto item.
 func (p ItemPatch) applyTo(item *Item) error {
 	// Decoding writes through non-nil pointers, which item may share with the
