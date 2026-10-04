@@ -73,10 +73,11 @@ func ParseItemPatch(body []byte) (ItemPatch, error) {
 	return ItemPatch{fields: fields}, nil
 }
 
-// sets reports whether the patch contains key.
+// sets reports whether the patch gives key a value. A null leaves a plain
+// string field unchanged, so it does not count.
 func (p ItemPatch) sets(key string) bool {
-	_, ok := p.fields[key]
-	return ok
+	value, ok := p.fields[key]
+	return ok && string(value) != "null"
 }
 
 // applyTo decodes the patch onto item.

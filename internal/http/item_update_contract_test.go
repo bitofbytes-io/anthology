@@ -520,8 +520,8 @@ func TestItemCreateContract(t *testing.T) {
 }
 
 // TestItemUpdateContractLegacyCover covers a row saved before the current
-// cover rules: an edit that omits coverImage keeps it, and sending it back
-// unchanged is validated like any other cover.
+// cover rules: an edit that omits coverImage, or sends it as null, keeps it,
+// and sending it back unchanged is validated like any other cover.
 func TestItemUpdateContractLegacyCover(t *testing.T) {
 	legacy := items.Item{
 		ID:            uuid.New(),
@@ -547,6 +547,11 @@ func TestItemUpdateContractLegacyCover(t *testing.T) {
 	}
 	if got["title"] != "Old Book, 2nd ed." || got["coverImage"] != legacy.CoverImage {
 		t.Fatalf("unexpected item %v", got)
+	}
+
+	rec = putItem(handler, legacy.ID.String(), `{"coverImage":null}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), legacy.CoverImage) {
+		t.Fatalf("null cover: status = %d, body %s; want the stored cover kept", rec.Code, rec.Body.String())
 	}
 
 	rec = putItem(handler, legacy.ID.String(), `{"title":"Old Book","coverImage":"http://example.com/old.jpg"}`)
