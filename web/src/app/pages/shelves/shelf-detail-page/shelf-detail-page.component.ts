@@ -1,7 +1,6 @@
 import { Component, DestroyRef, computed, inject, signal, ViewChild } from '@angular/core';
 import { NgClass } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
-import { FormArray, FormBuilder, FormControl, FormGroup, Validators } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
@@ -36,21 +35,8 @@ import {
 } from '../../../components/shelves/layout-editor/layout-editor.component';
 import { NotificationService } from '../../../services/notification.service';
 
-interface LayoutRowGroup {
-    rowId: FormControl<string | null>;
-    rowIndex: FormControl<number>;
-    columns: FormArray<FormGroup<LayoutColumnGroup>>;
-}
-
-interface LayoutColumnGroup {
-    columnId: FormControl<string | null>;
-    colIndex: FormControl<number>;
-    xStartNorm: FormControl<number>;
-    xEndNorm: FormControl<number>;
-    yStartNorm: FormControl<number>;
-    yEndNorm: FormControl<number>;
-    slotId: FormControl<string | null>;
-}
+/** A slot in the layout being edited. Its row and column are its position in the draft. */
+type DraftSlot = Omit<LayoutSlotData, 'rowIndex' | 'colIndex'>;
 
 @Component({
     selector: 'app-shelf-detail-page',
@@ -78,7 +64,6 @@ export class ShelfDetailPageComponent {
     private confirmingLayout = false;
     private readonly shelfService = inject(ShelfService);
     private readonly notification = inject(NotificationService);
-    private readonly fb = inject(FormBuilder);
     private readonly destroyRef = inject(DestroyRef);
 
     private pendingSlotId: string | null = null;
@@ -96,15 +81,25 @@ export class ShelfDetailPageComponent {
     readonly mode = signal<'view' | 'edit'>('view');
     readonly activeLayoutSelection = signal<SlotSelectionEvent | null>(null);
 
-    readonly layoutForm = this.fb.array<FormGroup<LayoutRowGroup>>([]);
     readonly unplacedItems = computed(() => this.shelf()?.unplaced ?? []);
     readonly recentlyScannedIds = computed(() => this.recentlyScannedItems);
 
-    // Writable signal for canvas slots - must be explicitly updated when form changes
-    readonly layoutSlots = signal<LayoutSlotData[]>([]);
-
-    // Explicit signal for layout editor - stays in sync with form mutations.
-    readonly layoutRows = signal<LayoutRow[]>([]);
+    /**
+     * The layout being edited, as rows of slots. A row stays, empty, after its
+     * last column is removed, so the editor keeps showing it.
+     */
+    readonly layoutDraft = signal<DraftSlot[][]>([]);
+    readonly layoutSlots = computed<LayoutSlotData[]>(() =>
+        this.layoutDraft().flatMap((row, rowIndex) =>
+            row.map((slot, colIndex) => ({ ...slot, rowIndex, colIndex })),
+        ),
+    );
+    readonly layoutRows = computed<LayoutRow[]>(() =>
+        this.layoutDraft().map((row, rowIndex) => ({
+            rowIndex,
+            columns: row.map((_, colIndex) => ({ colIndex })),
+        })),
+    );
 
     constructor() {
         this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
@@ -125,10 +120,6 @@ export class ShelfDetailPageComponent {
         });
     }
 
-    get rows(): FormArray<FormGroup<LayoutRowGroup>> {
-        return this.layoutForm;
-    }
-
     loadShelf(id: string): void {
         this.loading.set(true);
         this.shelfService
@@ -142,7 +133,7 @@ export class ShelfDetailPageComponent {
                     if (!highlighted && !this.selectedSlot()) {
                         this.selectedSlot.set(shelf.slots[0] ?? null);
                     }
-                    this.resetLayoutForm();
+                    this.resetLayout();
                 },
                 error: () => {
                     this.loading.set(false);
@@ -151,41 +142,27 @@ export class ShelfDetailPageComponent {
             });
     }
 
-    resetLayoutForm(): void {
-        this.layoutForm.clear();
+    resetLayout(): void {
         const shelf = this.shelf();
-        if (!shelf) {
-            this.updateLayoutSlots();
-            return;
-        }
-        const slotMap = new Map<string, ShelfSlot>();
-        (shelf.slots ?? []).forEach((slot) =>
-            slotMap.set(`${slot.rowIndex}-${slot.colIndex}`, slot),
+        const slots = new Map(
+            (shelf?.slots ?? []).map((slot) => [`${slot.rowIndex}-${slot.colIndex}`, slot]),
         );
-        shelf.rows.forEach((row) => {
-            const columns = row.columns ?? [];
-            const columnGroups = columns.map((col) => {
-                const slot = slotMap.get(`${row.rowIndex}-${col.colIndex}`);
-                return this.createColumnGroup(col.colIndex, {
-                    columnId: col.id,
-                    slotId: slot?.id ?? null,
-                    xStartNorm: col.xStartNorm,
-                    xEndNorm: col.xEndNorm,
-                    yStartNorm: slot?.yStartNorm ?? row.yStartNorm,
-                    yEndNorm: slot?.yEndNorm ?? row.yEndNorm,
-                });
-            });
-            const group = this.fb.group<LayoutRowGroup>({
-                rowId: this.fb.control(row.id, { nonNullable: false }),
-                rowIndex: this.fb.control(row.rowIndex, {
-                    nonNullable: true,
-                    validators: [Validators.required],
+        this.layoutDraft.set(
+            (shelf?.rows ?? []).map((row) =>
+                (row.columns ?? []).map((col) => {
+                    const slot = slots.get(`${row.rowIndex}-${col.colIndex}`);
+                    return {
+                        slotId: slot?.id,
+                        position: {
+                            xStartNorm: col.xStartNorm,
+                            xEndNorm: col.xEndNorm,
+                            yStartNorm: slot?.yStartNorm ?? row.yStartNorm,
+                            yEndNorm: slot?.yEndNorm ?? row.yEndNorm,
+                        },
+                    };
                 }),
-                columns: this.fb.array(columnGroups),
-            });
-            this.rows.push(group);
-        });
-        this.updateLayoutSlots();
+            ),
+        );
     }
 
     private highlightSlotFromQuery(): boolean {
@@ -203,140 +180,76 @@ export class ShelfDetailPageComponent {
         return true;
     }
 
-    private createColumnGroup(
-        colIndex: number,
-        initial?: Partial<{
-            columnId: string | null;
-            slotId: string | null;
-            xStartNorm: number;
-            xEndNorm: number;
-            yStartNorm: number;
-            yEndNorm: number;
-        }>,
-    ): FormGroup<LayoutColumnGroup> {
-        return this.fb.group<LayoutColumnGroup>({
-            columnId: this.fb.control(initial?.columnId ?? null, { nonNullable: false }),
-            colIndex: this.fb.control(colIndex, {
-                nonNullable: true,
-                validators: [Validators.required],
-            }),
-            xStartNorm: this.fb.control(initial?.xStartNorm ?? 0, {
-                nonNullable: true,
-                validators: [Validators.required, Validators.min(0), Validators.max(1)],
-            }),
-            xEndNorm: this.fb.control(initial?.xEndNorm ?? 1, {
-                nonNullable: true,
-                validators: [Validators.required, Validators.min(0), Validators.max(1)],
-            }),
-            yStartNorm: this.fb.control(initial?.yStartNorm ?? 0, {
-                nonNullable: true,
-                validators: [Validators.required, Validators.min(0), Validators.max(1)],
-            }),
-            yEndNorm: this.fb.control(initial?.yEndNorm ?? 1, {
-                nonNullable: true,
-                validators: [Validators.required, Validators.min(0), Validators.max(1)],
-            }),
-            slotId: this.fb.control(initial?.slotId ?? null, { nonNullable: false }),
-        });
-    }
-
     // Mode management
     startEdit(): void {
         this.mode.set('edit');
         this.activeLayoutSelection.set(null);
-        this.resetLayoutForm();
+        this.resetLayout();
     }
 
     cancelEdit(): void {
         this.mode.set('view');
         this.displaced.set([]);
         this.activeLayoutSelection.set(null);
-        this.resetLayoutForm();
+        this.resetLayout();
     }
 
     // Layout editing
     addRow(): void {
         const margin = ShelfDetailPageComponent.DEFAULT_SLOT_MARGIN;
-        this.rows.push(
-            this.fb.group<LayoutRowGroup>({
-                rowId: this.fb.control<string | null>(null),
-                rowIndex: this.fb.control(0, { nonNullable: true }),
-                columns: this.fb.array([
-                    this.createColumnGroup(0, {
+        this.editLayout((rows) => [
+            ...rows,
+            [
+                {
+                    position: {
                         xStartNorm: margin,
                         xEndNorm: 1 - margin,
                         yStartNorm: margin,
                         yEndNorm: 1 - margin,
-                    }),
-                ]),
-            }),
-        );
-        this.reindexRows();
+                    },
+                },
+            ],
+        ]);
     }
 
     addColumn(rowIndex: number): void {
-        const columns = this.rows.at(rowIndex).controls.columns;
-        const lastColumn = columns.length ? columns.at(columns.length - 1) : null;
         const margin = ShelfDetailPageComponent.DEFAULT_SLOT_MARGIN;
-        columns.push(
-            this.createColumnGroup(columns.length, {
-                xStartNorm: lastColumn?.controls.xStartNorm.value ?? margin,
-                xEndNorm: lastColumn?.controls.xEndNorm.value ?? 1 - margin,
-                yStartNorm: lastColumn?.controls.yStartNorm.value ?? margin,
-                yEndNorm: lastColumn?.controls.yEndNorm.value ?? 1 - margin,
+        this.editLayout((rows) =>
+            rows.map((row, index) => {
+                if (index !== rowIndex) {
+                    return row;
+                }
+                const last = row.at(-1)?.position;
+                return [
+                    ...row,
+                    {
+                        position: {
+                            xStartNorm: last?.xStartNorm ?? margin,
+                            xEndNorm: last?.xEndNorm ?? 1 - margin,
+                            yStartNorm: last?.yStartNorm ?? margin,
+                            yEndNorm: last?.yEndNorm ?? 1 - margin,
+                        },
+                    },
+                ];
             }),
         );
-        this.reindexRows();
     }
 
     removeColumn(event: { rowIndex: number; colIndex: number }): void {
-        const columns = this.rows.at(event.rowIndex).controls.columns;
-        columns.removeAt(event.colIndex);
-        this.reindexRows();
+        this.editLayout((rows) =>
+            rows.map((row, index) =>
+                index === event.rowIndex ? row.filter((_, col) => col !== event.colIndex) : row,
+            ),
+        );
     }
 
     removeRow(rowIndex: number): void {
-        this.rows.removeAt(rowIndex);
-        this.reindexRows();
+        this.editLayout((rows) => rows.filter((_, index) => index !== rowIndex));
     }
 
-    private reindexRows(): void {
-        this.rows.controls.forEach((row, rowIndex) => {
-            row.controls.rowIndex.setValue(rowIndex);
-            row.controls.columns.controls.forEach((column, colIndex) => {
-                column.controls.colIndex.setValue(colIndex);
-            });
-        });
+    private editLayout(edit: (rows: DraftSlot[][]) => DraftSlot[][]): void {
+        this.layoutDraft.update(edit);
         this.ensureActiveLayoutSelection();
-        this.updateLayoutSlots();
-    }
-
-    private updateLayoutSlots(): void {
-        const slots: LayoutSlotData[] = [];
-        this.rows.controls.forEach((row) => {
-            row.controls.columns.controls.forEach((col) => {
-                slots.push({
-                    rowIndex: row.controls.rowIndex.value,
-                    colIndex: col.controls.colIndex.value,
-                    position: {
-                        xStartNorm: col.controls.xStartNorm.value,
-                        xEndNorm: col.controls.xEndNorm.value,
-                        yStartNorm: col.controls.yStartNorm.value,
-                        yEndNorm: col.controls.yEndNorm.value,
-                    },
-                    slotId: col.controls.slotId.value ?? undefined,
-                });
-            });
-        });
-        this.layoutSlots.set(slots);
-        this.layoutRows.set(
-            this.rows.controls.map((row) => ({
-                rowIndex: row.controls.rowIndex.value,
-                columns: row.controls.columns.controls.map((col) => ({
-                    colIndex: col.controls.colIndex.value,
-                })),
-            })),
-        );
     }
 
     saveLayout(): void {
@@ -344,21 +257,16 @@ export class ShelfDetailPageComponent {
         if (!shelf || this.savingLayout() || this.confirmingLayout) {
             return;
         }
-        const slots: LayoutSlotInput[] = [];
-        this.rows.controls.forEach((row) => {
-            row.controls.columns.controls.forEach((col) => {
-                slots.push({
-                    newSlot: col.controls.slotId.value ? undefined : true,
-                    slotId: col.controls.slotId.value ?? undefined,
-                    rowIndex: row.controls.rowIndex.value,
-                    colIndex: col.controls.colIndex.value,
-                    xStartNorm: col.controls.xStartNorm.value,
-                    xEndNorm: col.controls.xEndNorm.value,
-                    yStartNorm: col.controls.yStartNorm.value,
-                    yEndNorm: col.controls.yEndNorm.value,
-                });
-            });
-        });
+        const slots: LayoutSlotInput[] = this.layoutSlots().map((slot) => ({
+            newSlot: slot.slotId ? undefined : true,
+            slotId: slot.slotId,
+            rowIndex: slot.rowIndex,
+            colIndex: slot.colIndex,
+            xStartNorm: slot.position.xStartNorm,
+            xEndNorm: slot.position.xEndNorm,
+            yStartNorm: slot.position.yStartNorm,
+            yEndNorm: slot.position.yEndNorm,
+        }));
 
         const retained = new Set(slots.map((slot) => slot.slotId));
         const affected = new Set(
@@ -415,7 +323,7 @@ export class ShelfDetailPageComponent {
                     this.displaced.set(response.displaced ?? []);
                     this.savingLayout.set(false);
                     this.mode.set('view');
-                    this.resetLayoutForm();
+                    this.resetLayout();
                     this.notification.success('Layout updated');
                 },
                 error: (err) => {
@@ -436,14 +344,17 @@ export class ShelfDetailPageComponent {
     }
 
     onSlotPositionChanged(update: SlotPositionUpdate): void {
-        const column = this.rows.at(update.rowIndex)?.controls.columns.at(update.colIndex);
-        if (!column) return;
-
-        column.controls.xStartNorm.setValue(update.position.xStartNorm);
-        column.controls.xEndNorm.setValue(update.position.xEndNorm);
-        column.controls.yStartNorm.setValue(update.position.yStartNorm);
-        column.controls.yEndNorm.setValue(update.position.yEndNorm);
-        this.updateLayoutSlots();
+        this.layoutDraft.update((rows) =>
+            rows.map((row, rowIndex) =>
+                rowIndex !== update.rowIndex
+                    ? row
+                    : row.map((slot, colIndex) =>
+                          colIndex === update.colIndex
+                              ? { ...slot, position: { ...update.position } }
+                              : slot,
+                      ),
+            ),
+        );
     }
 
     // Sidebar event handlers
@@ -562,8 +473,8 @@ export class ShelfDetailPageComponent {
         if (!selection) {
             return;
         }
-        const row = this.rows.at(selection.rowIndex);
-        if (!row || selection.colIndex >= row.controls.columns.length) {
+        const row = this.layoutDraft()[selection.rowIndex];
+        if (!row || selection.colIndex >= row.length) {
             this.activeLayoutSelection.set(null);
         }
     }
