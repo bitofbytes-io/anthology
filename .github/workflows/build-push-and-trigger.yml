@@ -79,6 +79,7 @@ jobs:
           echo "TAG=${{ steps.meta.outputs.TAG }}"
 
       - name: Build and push anthology API & UI images
+        id: build
         env:
           REGISTRY: ${{ env.IMAGE_REG }}
           API_IMAGE_REPO: ${{ env.API_IMAGE_REPO }}
@@ -87,12 +88,31 @@ jobs:
           VERSION: ${{ steps.meta.outputs.TAG }}
           REVISION: ${{ github.sha }}
           SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+          API_METADATA_FILE: ${{ runner.temp }}/anthology-api-build-metadata.json
+          UI_METADATA_FILE: ${{ runner.temp }}/anthology-ui-build-metadata.json
         run: |
           set -euo pipefail
           : "${REGISTRY:?Missing vars.IMAGE_REG repository variable}"
           : "${API_IMAGE_REPO:?Missing API image repository variable}"
           : "${UI_IMAGE_REPO:?Missing UI image repository variable}"
           make docker-buildx
+          read_digest() {
+            local digest
+            digest="$(jq -r '."containerimage.digest" // empty' "$1")"
+            if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "buildx metadata $1 has no valid containerimage.digest: '${digest}'" >&2
+              return 1
+            fi
+            printf '%s' "${digest}"
+          }
+          api_digest="$(read_digest "${API_METADATA_FILE}")"
+          ui_digest="$(read_digest "${UI_METADATA_FILE}")"
+          echo "Pushed ${REGISTRY}/${API_IMAGE_REPO}@${api_digest}"
+          echo "Pushed ${REGISTRY}/${UI_IMAGE_REPO}@${ui_digest}"
+          {
+            echo "api_digest=${api_digest}"
+            echo "ui_digest=${ui_digest}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Install SSH key & known_hosts
         env:
@@ -108,10 +128,41 @@ jobs:
       - name: Push main to local bare repo (trigger hook)
         env:
           TAG: ${{ steps.meta.outputs.TAG }}
+          API_IMAGE_DIGEST: ${{ steps.build.outputs.api_digest }}
+          UI_IMAGE_DIGEST: ${{ steps.build.outputs.ui_digest }}
         run: |
           set -euo pipefail
           : "${MANAGER_HOST:?Missing vars.MANAGER_HOST repository variable}"
           : "${MANAGER_REPO_PATH:=/srv/git/anthology-ci.git}"
+          : "${API_IMAGE_DIGEST:?Missing API image digest from the build step}"
+          : "${UI_IMAGE_DIGEST:?Missing UI image digest from the build step}"
           echo "Triggering deploy via ${MANAGER_HOST}:${MANAGER_REPO_PATH}"
           git remote add local "ssh://git@${MANAGER_HOST}/${MANAGER_REPO_PATH}"
-          git push --force local HEAD:refs/heads/main
+          git push --force \
+            -o "image-digest=${IMAGE_REG}/${API_IMAGE_REPO}@${API_IMAGE_DIGEST}" \
+            -o "image-digest=${IMAGE_REG}/${UI_IMAGE_REPO}@${UI_IMAGE_DIGEST}" \
+            local HEAD:refs/heads/main
+
+      # Git ignores the post-receive hook's exit status, so read the result it
+      # records. A rerun of the same commit moves no ref and re-checks the
+      # earlier run's status.
+      - name: Verify crystal1 deployed this revision
+        env:
+          EXPECTED_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --force local \
+            refs/deploy/status:refs/remotes/local/deploy-status
+          git show refs/remotes/local/deploy-status:status.json > "${RUNNER_TEMP}/anthology-deploy-status.json"
+          jq -e --arg revision "${EXPECTED_REVISION}" '
+            . as $status |
+            $status.schema == 1 and
+            $status.state == "succeeded" and
+            $status.revision == $revision and
+            (["proxy_anthology-api", "proxy_anthology-ui"] | all(
+              . as $service |
+              $status.services[$service].revision == $revision and
+              $status.services[$service].desired > 0 and
+              $status.services[$service].running == $status.services[$service].desired
+            ))
+          ' "${RUNNER_TEMP}/anthology-deploy-status.json"
