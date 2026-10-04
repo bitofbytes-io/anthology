@@ -145,6 +145,7 @@ docker-push: docker-push-api docker-push-ui ## Push both API and UI container im
 docker-publish: ## Build and push both images locally.
 	$(MAKE) docker-build docker-push
 
+# CI sets API_METADATA_FILE and UI_METADATA_FILE to read each pushed image digest from buildx's metadata.
 docker-buildx-api: IMAGE_REPO=$(API_IMAGE_REPO)
 docker-buildx-api: ensure-image-tag ## Build and push a multi-arch API image via buildx.
 	@echo ">> Building and pushing $(API_IMAGE) for $(PLATFORMS)"
@@ -158,6 +159,7 @@ docker-buildx-api: ensure-image-tag ## Build and push a multi-arch API image via
 		--build-arg SOURCE_URL=$(SOURCE_URL) \
 		$(API_OCI_LABEL_ARGS) \
 		-t $(API_IMAGE) \
+		$(if $(API_METADATA_FILE),--metadata-file "$(API_METADATA_FILE)") \
 		--push \
 		.
 
@@ -173,6 +175,7 @@ docker-buildx-ui: ensure-image-tag ## Build and push a multi-arch UI image via b
 		--build-arg SOURCE_URL=$(SOURCE_URL) \
 		$(UI_OCI_LABEL_ARGS) \
 		-t $(UI_IMAGE) \
+		$(if $(UI_METADATA_FILE),--metadata-file "$(UI_METADATA_FILE)") \
 		--push \
 		.
 
