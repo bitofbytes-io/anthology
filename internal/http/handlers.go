@@ -130,65 +130,14 @@ func parseListOptions(values url.Values) (items.ListOptions, error) {
 func (h *ItemHandler) Create(w http.ResponseWriter, r *http.Request) {
 	user := UserFromContext(r.Context())
 
-	var payload struct {
-		Title          string     `json:"title"`
-		Creator        string     `json:"creator"`
-		ItemType       string     `json:"itemType"`
-		ReleaseYear    *int       `json:"releaseYear"`
-		PageCount      *int       `json:"pageCount"`
-		CurrentPage    *int       `json:"currentPage"`
-		ISBN13         string     `json:"isbn13"`
-		ISBN10         string     `json:"isbn10"`
-		Description    string     `json:"description"`
-		CoverImage     string     `json:"coverImage"`
-		Format         string     `json:"format"`
-		Genre          string     `json:"genre"`
-		Rating         *int       `json:"rating"`
-		RetailPriceUsd *float64   `json:"retailPriceUsd"`
-		GoogleVolumeId string     `json:"googleVolumeId"`
-		Platform       string     `json:"platform"`
-		AgeGroup       string     `json:"ageGroup"`
-		PlayerCount    string     `json:"playerCount"`
-		ReadingStatus  string     `json:"readingStatus"`
-		ReadAt         *time.Time `json:"readAt"`
-		Notes          string     `json:"notes"`
-		SeriesName     string     `json:"seriesName"`
-		VolumeNumber   *int       `json:"volumeNumber"`
-		TotalVolumes   *int       `json:"totalVolumes"`
-	}
-
-	if err := decodeJSONBody(w, r, &payload); err != nil {
+	var input items.CreateItemInput
+	if err := decodeJSONBody(w, r, &input); err != nil {
 		writeJSONError(w, err)
 		return
 	}
+	input.OwnerID = user.ID
 
-	item, err := h.service.Create(r.Context(), items.CreateItemInput{
-		OwnerID:        user.ID,
-		Title:          payload.Title,
-		Creator:        payload.Creator,
-		ItemType:       items.ItemType(payload.ItemType),
-		ReleaseYear:    payload.ReleaseYear,
-		PageCount:      payload.PageCount,
-		CurrentPage:    payload.CurrentPage,
-		ISBN13:         payload.ISBN13,
-		ISBN10:         payload.ISBN10,
-		Description:    payload.Description,
-		CoverImage:     payload.CoverImage,
-		Format:         items.Format(payload.Format),
-		Genre:          items.Genre(payload.Genre),
-		Rating:         payload.Rating,
-		RetailPriceUsd: payload.RetailPriceUsd,
-		GoogleVolumeId: payload.GoogleVolumeId,
-		Platform:       payload.Platform,
-		AgeGroup:       payload.AgeGroup,
-		PlayerCount:    payload.PlayerCount,
-		ReadingStatus:  items.BookStatus(payload.ReadingStatus),
-		ReadAt:         payload.ReadAt,
-		Notes:          payload.Notes,
-		SeriesName:     payload.SeriesName,
-		VolumeNumber:   payload.VolumeNumber,
-		TotalVolumes:   payload.TotalVolumes,
-	})
+	item, err := h.service.Create(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, items.ErrValidation) {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -221,7 +170,8 @@ func (h *ItemHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, item)
 }
 
-// Update modifies an item.
+// Update modifies an item. Keys omitted from the body keep their stored
+// values; items.ParseItemPatch describes how null is handled.
 func (h *ItemHandler) Update(w http.ResponseWriter, r *http.Request) {
 	user := UserFromContext(r.Context())
 
@@ -230,150 +180,18 @@ func (h *ItemHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	raw := map[string]json.RawMessage{}
-	if err := decodeJSONBody(w, r, &raw); err != nil {
+	var body json.RawMessage
+	if err := decodeJSONBody(w, r, &body); err != nil {
 		writeJSONError(w, err)
 		return
 	}
-
-	var payload struct {
-		Title          *string    `json:"title"`
-		Creator        *string    `json:"creator"`
-		ItemType       *string    `json:"itemType"`
-		ReleaseYear    *int       `json:"releaseYear"`
-		PageCount      *int       `json:"pageCount"`
-		CurrentPage    *int       `json:"currentPage"`
-		ISBN13         *string    `json:"isbn13"`
-		ISBN10         *string    `json:"isbn10"`
-		Description    *string    `json:"description"`
-		CoverImage     *string    `json:"coverImage"`
-		Format         *string    `json:"format"`
-		Genre          *string    `json:"genre"`
-		Rating         *int       `json:"rating"`
-		RetailPriceUsd *float64   `json:"retailPriceUsd"`
-		GoogleVolumeId *string    `json:"googleVolumeId"`
-		Platform       *string    `json:"platform"`
-		AgeGroup       *string    `json:"ageGroup"`
-		PlayerCount    *string    `json:"playerCount"`
-		ReadingStatus  *string    `json:"readingStatus"`
-		ReadAt         *time.Time `json:"readAt"`
-		Notes          *string    `json:"notes"`
-		SeriesName     *string    `json:"seriesName"`
-		VolumeNumber   *int       `json:"volumeNumber"`
-		TotalVolumes   *int       `json:"totalVolumes"`
-	}
-
-	if err := decodeInto(raw, &payload); err != nil {
+	patch, err := items.ParseItemPatch(body)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	input := items.UpdateItemInput{}
-	if _, ok := raw["title"]; ok {
-		input.Title = payload.Title
-	}
-	if _, ok := raw["creator"]; ok {
-		input.Creator = payload.Creator
-	}
-	if _, ok := raw["itemType"]; ok {
-		if payload.ItemType != nil {
-			typeValue := items.ItemType(*payload.ItemType)
-			input.ItemType = &typeValue
-		} else {
-			input.ItemType = new(items.ItemType)
-		}
-	}
-	if _, ok := raw["releaseYear"]; ok {
-		value := payload.ReleaseYear
-		input.ReleaseYear = &value
-	}
-	if _, ok := raw["pageCount"]; ok {
-		value := payload.PageCount
-		input.PageCount = &value
-	}
-	if _, ok := raw["currentPage"]; ok {
-		value := payload.CurrentPage
-		input.CurrentPage = &value
-	}
-	if _, ok := raw["notes"]; ok {
-		input.Notes = payload.Notes
-	}
-	if _, ok := raw["isbn13"]; ok {
-		input.ISBN13 = payload.ISBN13
-	}
-	if _, ok := raw["isbn10"]; ok {
-		input.ISBN10 = payload.ISBN10
-	}
-	if _, ok := raw["description"]; ok {
-		input.Description = payload.Description
-	}
-	if _, ok := raw["coverImage"]; ok {
-		input.CoverImage = payload.CoverImage
-	}
-	if _, ok := raw["format"]; ok {
-		if payload.Format != nil {
-			formatValue := items.Format(*payload.Format)
-			input.Format = &formatValue
-		} else {
-			input.Format = new(items.Format)
-		}
-	}
-	if _, ok := raw["genre"]; ok {
-		if payload.Genre != nil {
-			genreValue := items.Genre(*payload.Genre)
-			input.Genre = &genreValue
-		} else {
-			input.Genre = new(items.Genre)
-		}
-	}
-	if _, ok := raw["rating"]; ok {
-		value := payload.Rating
-		input.Rating = &value
-	}
-	if _, ok := raw["retailPriceUsd"]; ok {
-		value := payload.RetailPriceUsd
-		input.RetailPriceUsd = &value
-	}
-	if _, ok := raw["googleVolumeId"]; ok {
-		input.GoogleVolumeId = payload.GoogleVolumeId
-	}
-	if _, ok := raw["platform"]; ok {
-		input.Platform = payload.Platform
-	}
-	if _, ok := raw["ageGroup"]; ok {
-		input.AgeGroup = payload.AgeGroup
-	}
-	if _, ok := raw["playerCount"]; ok {
-		input.PlayerCount = payload.PlayerCount
-	}
-
-	if _, ok := raw["readingStatus"]; ok {
-		if payload.ReadingStatus != nil {
-			statusValue := items.BookStatus(*payload.ReadingStatus)
-			input.ReadingStatus = &statusValue
-		} else {
-			input.ReadingStatus = new(items.BookStatus)
-		}
-	}
-
-	if _, ok := raw["readAt"]; ok {
-		value := payload.ReadAt
-		input.ReadAt = &value
-	}
-
-	if _, ok := raw["seriesName"]; ok {
-		input.SeriesName = payload.SeriesName
-	}
-	if _, ok := raw["volumeNumber"]; ok {
-		value := payload.VolumeNumber
-		input.VolumeNumber = &value
-	}
-	if _, ok := raw["totalVolumes"]; ok {
-		value := payload.TotalVolumes
-		input.TotalVolumes = &value
-	}
-
-	item, err := h.service.Update(r.Context(), id, user.ID, input)
+	item, err := h.service.Update(r.Context(), id, user.ID, patch)
 	if err != nil {
 		handleServiceError(w, err, h.logger)
 		return
@@ -661,12 +479,4 @@ func writeJSONError(w http.ResponseWriter, err error) {
 	}
 	// Return generic message to avoid leaking internal JSON parsing details
 	writeError(w, http.StatusBadRequest, "invalid request body")
-}
-
-func decodeInto(raw map[string]json.RawMessage, payload any) error {
-	data, err := json.Marshal(raw)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(data, payload)
 }

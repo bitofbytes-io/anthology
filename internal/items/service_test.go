@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -152,22 +153,20 @@ func TestServiceUpdate(t *testing.T) {
 
 	title := "Updated"
 	notes := "Now includes expansion content"
-	itemType := ItemTypeBook
 	newDescription := "Updated overview"
 	isbn13 := "9781984801265"
 	isbn10 := "1984801263"
 	pageCountValue := 640
-	pageCountPtr := &pageCountValue
 
-	updated, err := svc.Update(context.Background(), created.ID, testOwnerID, UpdateItemInput{
-		Title:       &title,
-		Notes:       &notes,
-		ItemType:    &itemType,
-		Description: &newDescription,
-		ISBN13:      &isbn13,
-		ISBN10:      &isbn10,
-		PageCount:   &pageCountPtr,
-	})
+	updated, err := svc.Update(context.Background(), created.ID, testOwnerID, patchOf(t, map[string]any{
+		"title":       title,
+		"notes":       notes,
+		"itemType":    ItemTypeBook,
+		"description": newDescription,
+		"isbn13":      isbn13,
+		"isbn10":      isbn10,
+		"pageCount":   pageCountValue,
+	}))
 	if err != nil {
 		t.Fatalf("update failed: %v", err)
 	}
@@ -211,7 +210,7 @@ func TestServiceUpdateSupportsExplicitNullSeriesNumbers(t *testing.T) {
 		t.Fatalf("create failed: %v", err)
 	}
 
-	updated, err := svc.Update(ctx, book.ID, testOwnerID, UpdateItemInput{VolumeNumber: ptrNilIntPtr()})
+	updated, err := svc.Update(ctx, book.ID, testOwnerID, patchOf(t, map[string]any{"volumeNumber": nil}))
 	if err != nil {
 		t.Fatalf("update failed: %v", err)
 	}
@@ -225,7 +224,7 @@ func TestServiceUpdateSupportsExplicitNullSeriesNumbers(t *testing.T) {
 		t.Fatalf("expected seriesName to remain Saga, got %q", updated.SeriesName)
 	}
 
-	updated, err = svc.Update(ctx, book.ID, testOwnerID, UpdateItemInput{TotalVolumes: ptrNilIntPtr()})
+	updated, err = svc.Update(ctx, book.ID, testOwnerID, patchOf(t, map[string]any{"totalVolumes": nil}))
 	if err != nil {
 		t.Fatalf("update failed: %v", err)
 	}
@@ -491,14 +490,12 @@ func TestServiceUpdateRejectsBlankTitleOrItemType(t *testing.T) {
 
 	ctx := context.Background()
 
-	blank := "   "
-	_, err = svc.Update(ctx, item.ID, testOwnerID, UpdateItemInput{Title: &blank})
+	_, err = svc.Update(ctx, item.ID, testOwnerID, patchOf(t, map[string]any{"title": "   "}))
 	if err == nil || !strings.Contains(err.Error(), "title is required") {
 		t.Fatalf("expected title validation error, got %v", err)
 	}
 
-	emptyType := ItemType("")
-	_, err = svc.Update(ctx, item.ID, testOwnerID, UpdateItemInput{ItemType: &emptyType})
+	_, err = svc.Update(ctx, item.ID, testOwnerID, patchOf(t, map[string]any{"itemType": ""}))
 	if err == nil || !strings.Contains(err.Error(), "itemType is required") {
 		t.Fatalf("expected itemType validation error, got %v", err)
 	}
@@ -518,8 +515,7 @@ func TestServiceRejectsUnknownItemType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create failed: %v", err)
 	}
-	unknown := ItemType("Book")
-	_, err = svc.Update(ctx, item.ID, testOwnerID, UpdateItemInput{ItemType: &unknown})
+	_, err = svc.Update(ctx, item.ID, testOwnerID, patchOf(t, map[string]any{"itemType": "Book"}))
 	if !errors.As(err, &validation) || !strings.Contains(err.Error(), "itemType must be one of") {
 		t.Fatalf("expected itemType validation error on update, got %v", err)
 	}
@@ -552,9 +548,7 @@ func TestServiceUpdateChangingTypeClearsFieldsForOtherTypes(t *testing.T) {
 		t.Fatalf("create book failed: %v", err)
 	}
 
-	gameType := ItemTypeGame
-	platform := "Switch"
-	game, err := svc.Update(ctx, book.ID, testOwnerID, UpdateItemInput{ItemType: &gameType, Platform: &platform})
+	game, err := svc.Update(ctx, book.ID, testOwnerID, patchOf(t, map[string]any{"itemType": ItemTypeGame, "platform": "Switch"}))
 	if err != nil {
 		t.Fatalf("update to game failed: %v", err)
 	}
@@ -565,8 +559,7 @@ func TestServiceUpdateChangingTypeClearsFieldsForOtherTypes(t *testing.T) {
 		t.Fatalf("expected platform to be kept for game, got %q", game.Platform)
 	}
 
-	movieType := ItemTypeMovie
-	movie, err := svc.Update(ctx, book.ID, testOwnerID, UpdateItemInput{ItemType: &movieType})
+	movie, err := svc.Update(ctx, book.ID, testOwnerID, patchOf(t, map[string]any{"itemType": ItemTypeMovie}))
 	if err != nil {
 		t.Fatalf("update to movie failed: %v", err)
 	}
@@ -585,8 +578,7 @@ func TestServiceClearsBookIdentifiersForNonBooks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create book failed: %v", err)
 	}
-	gameType := ItemTypeGame
-	game, err := svc.Update(ctx, book.ID, testOwnerID, UpdateItemInput{ItemType: &gameType})
+	game, err := svc.Update(ctx, book.ID, testOwnerID, patchOf(t, map[string]any{"itemType": ItemTypeGame}))
 	if err != nil {
 		t.Fatalf("update to game failed: %v", err)
 	}
@@ -618,7 +610,7 @@ func TestServiceRejectsOversizedCoverImage(t *testing.T) {
 
 	updatePayload := bigPayload
 	item, _ := svc.Create(context.Background(), CreateItemInput{OwnerID: testOwnerID, Title: "Small cover", ItemType: ItemTypeBook, CoverImage: "data:image/png;base64,aA=="})
-	_, err = svc.Update(context.Background(), item.ID, testOwnerID, UpdateItemInput{CoverImage: &updatePayload})
+	_, err = svc.Update(context.Background(), item.ID, testOwnerID, patchOf(t, map[string]any{"coverImage": updatePayload}))
 	if err == nil {
 		t.Fatalf("expected oversized cover image to be rejected on update")
 	}
@@ -656,13 +648,13 @@ func TestServiceValidatesBookStatusTransitions(t *testing.T) {
 		t.Fatalf("create failed: %v", err)
 	}
 
-	_, err = svc.Update(context.Background(), book.ID, testOwnerID, UpdateItemInput{ReadingStatus: ptrBookStatus(BookStatusRead)})
+	_, err = svc.Update(context.Background(), book.ID, testOwnerID, patchOf(t, map[string]any{"readingStatus": BookStatusRead}))
 	if err == nil {
 		t.Fatalf("expected read status to require readAt")
 	}
 
 	readAt := time.Date(2023, 3, 5, 0, 0, 0, 0, time.UTC)
-	updated, err := svc.Update(context.Background(), book.ID, testOwnerID, UpdateItemInput{ReadingStatus: ptrBookStatus(BookStatusRead), ReadAt: ptrTimePtr(readAt)})
+	updated, err := svc.Update(context.Background(), book.ID, testOwnerID, patchOf(t, map[string]any{"readingStatus": BookStatusRead, "readAt": readAt}))
 	if err != nil {
 		t.Fatalf("expected valid status update, got %v", err)
 	}
@@ -676,10 +668,10 @@ func TestServiceValidatesBookStatusTransitions(t *testing.T) {
 		t.Fatalf("expected current page to clear for read status")
 	}
 
-	readingUpdate, err := svc.Update(context.Background(), book.ID, testOwnerID, UpdateItemInput{
-		ReadingStatus: ptrBookStatus(BookStatusReading),
-		CurrentPage:   ptrIntPtr(120),
-	})
+	readingUpdate, err := svc.Update(context.Background(), book.ID, testOwnerID, patchOf(t, map[string]any{
+		"readingStatus": BookStatusReading,
+		"currentPage":   120,
+	}))
 	if err != nil {
 		t.Fatalf("expected reading status update to succeed: %v", err)
 	}
@@ -687,12 +679,12 @@ func TestServiceValidatesBookStatusTransitions(t *testing.T) {
 		t.Fatalf("expected current page to persist")
 	}
 
-	_, err = svc.Update(context.Background(), book.ID, testOwnerID, UpdateItemInput{CurrentPage: ptrIntPtr(999)})
+	_, err = svc.Update(context.Background(), book.ID, testOwnerID, patchOf(t, map[string]any{"currentPage": 999}))
 	if err == nil {
 		t.Fatalf("expected error when current page exceeds total")
 	}
 
-	cleared, err := svc.Update(context.Background(), book.ID, testOwnerID, UpdateItemInput{ReadingStatus: ptrBookStatus(BookStatusNone)})
+	cleared, err := svc.Update(context.Background(), book.ID, testOwnerID, patchOf(t, map[string]any{"readingStatus": BookStatusNone}))
 	if err != nil {
 		t.Fatalf("expected clearing reading status to succeed: %v", err)
 	}
@@ -706,7 +698,7 @@ func TestServiceValidatesBookStatusTransitions(t *testing.T) {
 		t.Fatalf("expected current page to clear when status removed")
 	}
 
-	_, err = svc.Update(context.Background(), book.ID, testOwnerID, UpdateItemInput{ReadingStatus: ptrBookStatus(BookStatusReading), CurrentPage: ptrIntPtr(-5)})
+	_, err = svc.Update(context.Background(), book.ID, testOwnerID, patchOf(t, map[string]any{"readingStatus": BookStatusReading, "currentPage": -5}))
 	if err == nil {
 		t.Fatalf("expected negative current page to fail")
 	}
@@ -717,27 +709,19 @@ func ptrInt(value int) *int {
 	return &v
 }
 
-func ptrIntPtr(value int) **int {
-	inner := ptrInt(value)
-	return &inner
-}
-
-func ptrNilIntPtr() **int {
-	var inner *int
-	return &inner
-}
-
-func ptrBookStatus(status BookStatus) *BookStatus {
-	return &status
-}
-
-func ptrTime(t time.Time) *time.Time {
-	return &t
-}
-
-func ptrTimePtr(t time.Time) **time.Time {
-	value := ptrTime(t)
-	return &value
+// patchOf builds an update patch from fields, as the API would parse the
+// equivalent JSON body. A nil value sends an explicit null.
+func patchOf(t *testing.T, fields map[string]any) ItemPatch {
+	t.Helper()
+	body, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatalf("marshal patch: %v", err)
+	}
+	patch, err := ParseItemPatch(body)
+	if err != nil {
+		t.Fatalf("parse patch %s: %v", body, err)
+	}
+	return patch
 }
 
 type seriesUpdateRepo struct {
@@ -865,7 +849,7 @@ func TestServiceAllowsDataURIsLongerThanURLLimitWhenUnderByteCap(t *testing.T) {
 	}
 
 	updatePayload := makeDataURICoverBytes(4200)
-	updated, err := svc.Update(context.Background(), item.ID, testOwnerID, UpdateItemInput{CoverImage: &updatePayload})
+	updated, err := svc.Update(context.Background(), item.ID, testOwnerID, patchOf(t, map[string]any{"coverImage": updatePayload}))
 	if err != nil {
 		t.Fatalf("expected update to accept long data URI, got error: %v", err)
 	}
