@@ -118,63 +118,37 @@ type ShelfPlacement struct {
 	ColIndex  int       `json:"colIndex"`
 }
 
-// CreateItemInput captures the data needed to create a new Item.
+// CreateItemInput captures the data needed to create a new Item. The JSON
+// tags define the create request body; OwnerID and the timestamps are set by
+// the server, never by the client.
 type CreateItemInput struct {
-	OwnerID        uuid.UUID
-	Title          string
-	Creator        string
-	ItemType       ItemType
-	ReleaseYear    *int
-	PageCount      *int
-	CurrentPage    *int
-	ISBN13         string
-	ISBN10         string
-	Description    string
-	CoverImage     string
-	Format         Format
-	Genre          Genre
-	Rating         *int
-	RetailPriceUsd *float64
-	GoogleVolumeId string
-	Platform       string
-	AgeGroup       string
-	PlayerCount    string
-	ReadingStatus  BookStatus
-	ReadAt         *time.Time
-	Notes          string
-	SeriesName     string
-	VolumeNumber   *int
-	TotalVolumes   *int
-	CreatedAt      *time.Time
-	UpdatedAt      *time.Time
-}
-
-// UpdateItemInput captures the editable fields for an existing item.
-type UpdateItemInput struct {
-	Title          *string
-	Creator        *string
-	ItemType       *ItemType
-	ReleaseYear    **int
-	PageCount      **int
-	CurrentPage    **int
-	ISBN13         *string
-	ISBN10         *string
-	Description    *string
-	CoverImage     *string
-	Format         *Format
-	Genre          *Genre
-	Rating         **int
-	RetailPriceUsd **float64
-	GoogleVolumeId *string
-	Platform       *string
-	AgeGroup       *string
-	PlayerCount    *string
-	ReadingStatus  *BookStatus
-	ReadAt         **time.Time
-	Notes          *string
-	SeriesName     *string
-	VolumeNumber   **int
-	TotalVolumes   **int
+	OwnerID        uuid.UUID  `json:"-"`
+	Title          string     `json:"title"`
+	Creator        string     `json:"creator"`
+	ItemType       ItemType   `json:"itemType"`
+	ReleaseYear    *int       `json:"releaseYear"`
+	PageCount      *int       `json:"pageCount"`
+	CurrentPage    *int       `json:"currentPage"`
+	ISBN13         string     `json:"isbn13"`
+	ISBN10         string     `json:"isbn10"`
+	Description    string     `json:"description"`
+	CoverImage     string     `json:"coverImage"`
+	Format         Format     `json:"format"`
+	Genre          Genre      `json:"genre"`
+	Rating         *int       `json:"rating"`
+	RetailPriceUsd *float64   `json:"retailPriceUsd"`
+	GoogleVolumeId string     `json:"googleVolumeId"`
+	Platform       string     `json:"platform"`
+	AgeGroup       string     `json:"ageGroup"`
+	PlayerCount    string     `json:"playerCount"`
+	ReadingStatus  BookStatus `json:"readingStatus"`
+	ReadAt         *time.Time `json:"readAt"`
+	Notes          string     `json:"notes"`
+	SeriesName     string     `json:"seriesName"`
+	VolumeNumber   *int       `json:"volumeNumber"`
+	TotalVolumes   *int       `json:"totalVolumes"`
+	CreatedAt      *time.Time `json:"-"`
+	UpdatedAt      *time.Time `json:"-"`
 }
 
 // ShelfStatus describes whether an item has been assigned to a shelf.

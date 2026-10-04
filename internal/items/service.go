@@ -44,98 +44,46 @@ func (s *Service) Create(ctx context.Context, input CreateItemInput) (Item, erro
 	if input.OwnerID == (uuid.UUID{}) {
 		return Item{}, validationErr("ownerID is required")
 	}
-	if err := validateItemInput(input.Title, input.ItemType); err != nil {
-		return Item{}, err
-	}
 
-	isbn13, isbn10, pageCount := normalizeBookIdentifiers(
-		input.ItemType,
-		strings.TrimSpace(input.ISBN13),
-		strings.TrimSpace(input.ISBN10),
-		normalizePositiveInt(input.PageCount),
-	)
-	currentPage, err := normalizeCurrentPage(input.CurrentPage)
-	if err != nil {
-		return Item{}, err
-	}
-
-	readingStatus, readAt, normalizedCurrentPage, err := normalizeBookFields(input.ItemType, input.ReadingStatus, input.ReadAt, pageCount, currentPage)
-	if err != nil {
-		return Item{}, err
-	}
-
-	coverImage, err := sanitizeCoverImage(input.CoverImage)
-	if err != nil {
-		return Item{}, err
-	}
-
-	// Normalize book-specific extended fields
-	format, genre, rating, retailPriceUsd, googleVolumeId := normalizeExtendedBookFields(
-		input.ItemType,
-		input.Format,
-		input.Genre,
-		input.Rating,
-		input.RetailPriceUsd,
-		input.GoogleVolumeId,
-	)
-
-	// Clear game-specific fields for non-game items
-	platform, ageGroup, playerCount := normalizeGameFields(
-		input.ItemType,
-		input.Platform,
-		input.AgeGroup,
-		input.PlayerCount,
-	)
-
-	// Normalize series fields (books only)
-	seriesName, volumeNumber, totalVolumes, err := normalizeSeriesFields(
-		input.ItemType,
-		input.SeriesName,
-		input.VolumeNumber,
-		input.TotalVolumes,
-	)
-	if err != nil {
-		return Item{}, err
-	}
-
-	now := time.Now().UTC()
-	createdAt := now
-	if input.CreatedAt != nil && !input.CreatedAt.IsZero() {
-		createdAt = input.CreatedAt.UTC()
-	}
-	updatedAt := createdAt
-	if input.UpdatedAt != nil && !input.UpdatedAt.IsZero() {
-		updatedAt = input.UpdatedAt.UTC()
-	}
 	item := Item{
 		ID:             uuid.New(),
 		OwnerID:        input.OwnerID,
-		Title:          strings.TrimSpace(input.Title),
-		Creator:        strings.TrimSpace(input.Creator),
+		Title:          input.Title,
+		Creator:        input.Creator,
 		ItemType:       input.ItemType,
-		ReleaseYear:    normalizeYear(input.ReleaseYear),
-		PageCount:      pageCount,
-		CurrentPage:    normalizedCurrentPage,
-		ISBN13:         isbn13,
-		ISBN10:         isbn10,
-		Description:    strings.TrimSpace(input.Description),
-		CoverImage:     coverImage,
-		Format:         format,
-		Genre:          genre,
-		Rating:         rating,
-		RetailPriceUsd: retailPriceUsd,
-		GoogleVolumeId: googleVolumeId,
-		Platform:       platform,
-		AgeGroup:       ageGroup,
-		PlayerCount:    playerCount,
-		ReadingStatus:  readingStatus,
-		ReadAt:         readAt,
-		Notes:          strings.TrimSpace(input.Notes),
-		SeriesName:     seriesName,
-		VolumeNumber:   volumeNumber,
-		TotalVolumes:   totalVolumes,
-		CreatedAt:      createdAt,
-		UpdatedAt:      updatedAt,
+		ReleaseYear:    input.ReleaseYear,
+		PageCount:      input.PageCount,
+		CurrentPage:    input.CurrentPage,
+		ISBN13:         input.ISBN13,
+		ISBN10:         input.ISBN10,
+		Description:    input.Description,
+		CoverImage:     input.CoverImage,
+		Format:         input.Format,
+		Genre:          input.Genre,
+		Rating:         input.Rating,
+		RetailPriceUsd: input.RetailPriceUsd,
+		GoogleVolumeId: input.GoogleVolumeId,
+		Platform:       input.Platform,
+		AgeGroup:       input.AgeGroup,
+		PlayerCount:    input.PlayerCount,
+		ReadingStatus:  input.ReadingStatus,
+		ReadAt:         input.ReadAt,
+		Notes:          input.Notes,
+		SeriesName:     input.SeriesName,
+		VolumeNumber:   input.VolumeNumber,
+		TotalVolumes:   input.TotalVolumes,
+	}
+	if err := normalizeItem(&item, true); err != nil {
+		return Item{}, err
+	}
+
+	item.CreatedAt = time.Now().UTC()
+	if input.CreatedAt != nil && !input.CreatedAt.IsZero() {
+		item.CreatedAt = input.CreatedAt.UTC()
+	}
+	item.UpdatedAt = item.CreatedAt
+	if input.UpdatedAt != nil && !input.UpdatedAt.IsZero() {
+		item.UpdatedAt = input.UpdatedAt.UTC()
 	}
 
 	return s.repo.Create(ctx, item)
@@ -162,173 +110,24 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID, ownerID uuid.UUID) (Ite
 	return s.repo.Get(ctx, id, ownerID)
 }
 
-// Update applies modifications to an item.
-func (s *Service) Update(ctx context.Context, id uuid.UUID, ownerID uuid.UUID, input UpdateItemInput) (Item, error) {
-	existing, err := s.repo.Get(ctx, id, ownerID)
+// Update applies patch to the stored item, then normalizes and validates the
+// result the same way Create does. The cover image is checked only when the
+// patch sets it: rows saved before the current cover rules (such as HTTPS
+// only) may hold a cover those rules reject, and that must not block an edit
+// that leaves the cover alone.
+func (s *Service) Update(ctx context.Context, id uuid.UUID, ownerID uuid.UUID, patch ItemPatch) (Item, error) {
+	item, err := s.repo.Get(ctx, id, ownerID)
 	if err != nil {
 		return Item{}, err
 	}
-
-	if input.Title != nil {
-		title := strings.TrimSpace(*input.Title)
-		if title == "" {
-			return Item{}, validationErr("title is required")
-		}
-		existing.Title = title
-	}
-
-	if input.ItemType != nil {
-		if err := validateItemType(*input.ItemType); err != nil {
-			return Item{}, err
-		}
-		existing.ItemType = *input.ItemType
-	}
-
-	if input.Creator != nil {
-		existing.Creator = strings.TrimSpace(*input.Creator)
-	}
-
-	if input.ReleaseYear != nil {
-		existing.ReleaseYear = normalizeYear(*input.ReleaseYear)
-	}
-
-	if input.PageCount != nil {
-		existing.PageCount = normalizePositiveInt(*input.PageCount)
-	}
-
-	if input.CurrentPage != nil {
-		value, err := normalizeCurrentPage(*input.CurrentPage)
-		if err != nil {
-			return Item{}, err
-		}
-		existing.CurrentPage = value
-	}
-
-	if input.Notes != nil {
-		existing.Notes = strings.TrimSpace(*input.Notes)
-	}
-
-	if input.ISBN13 != nil {
-		existing.ISBN13 = strings.TrimSpace(*input.ISBN13)
-	}
-
-	if input.ISBN10 != nil {
-		existing.ISBN10 = strings.TrimSpace(*input.ISBN10)
-	}
-
-	if input.Description != nil {
-		existing.Description = strings.TrimSpace(*input.Description)
-	}
-
-	if input.CoverImage != nil {
-		coverImage, err := sanitizeCoverImage(*input.CoverImage)
-		if err != nil {
-			return Item{}, err
-		}
-		existing.CoverImage = coverImage
-	}
-
-	if input.Platform != nil {
-		existing.Platform = strings.TrimSpace(*input.Platform)
-	}
-
-	if input.AgeGroup != nil {
-		existing.AgeGroup = strings.TrimSpace(*input.AgeGroup)
-	}
-
-	if input.PlayerCount != nil {
-		existing.PlayerCount = strings.TrimSpace(*input.PlayerCount)
-	}
-
-	if input.Format != nil {
-		existing.Format = normalizeFormat(*input.Format)
-	}
-
-	if input.Genre != nil {
-		existing.Genre = normalizeGenre(*input.Genre)
-	}
-
-	if input.Rating != nil {
-		existing.Rating = normalizeRating(*input.Rating)
-	}
-
-	if input.RetailPriceUsd != nil {
-		existing.RetailPriceUsd = normalizePrice(*input.RetailPriceUsd)
-	}
-
-	if input.GoogleVolumeId != nil {
-		existing.GoogleVolumeId = strings.TrimSpace(*input.GoogleVolumeId)
-	}
-
-	// Handle series fields
-	if input.SeriesName != nil {
-		existing.SeriesName = strings.TrimSpace(*input.SeriesName)
-	}
-	if input.VolumeNumber != nil {
-		existing.VolumeNumber = normalizePositiveIntPtrPtr(input.VolumeNumber)
-	}
-	if input.TotalVolumes != nil {
-		existing.TotalVolumes = normalizePositiveIntPtrPtr(input.TotalVolumes)
-	}
-
-	// Re-apply type-specific normalization after merging so fields that do
-	// not belong to the (possibly changed) item type are cleared.
-	existing.Format, existing.Genre, existing.Rating, existing.RetailPriceUsd, existing.GoogleVolumeId = normalizeExtendedBookFields(
-		existing.ItemType,
-		existing.Format,
-		existing.Genre,
-		existing.Rating,
-		existing.RetailPriceUsd,
-		existing.GoogleVolumeId,
-	)
-	existing.ISBN13, existing.ISBN10, existing.PageCount = normalizeBookIdentifiers(
-		existing.ItemType,
-		existing.ISBN13,
-		existing.ISBN10,
-		existing.PageCount,
-	)
-	existing.Platform, existing.AgeGroup, existing.PlayerCount = normalizeGameFields(
-		existing.ItemType,
-		existing.Platform,
-		existing.AgeGroup,
-		existing.PlayerCount,
-	)
-
-	// Validate series fields after update
-
-	seriesName, volumeNumber, totalVolumes, err := normalizeSeriesFields(
-		existing.ItemType,
-		existing.SeriesName,
-		existing.VolumeNumber,
-		existing.TotalVolumes,
-	)
-	if err != nil {
+	if err := patch.applyTo(&item); err != nil {
 		return Item{}, err
 	}
-	existing.SeriesName = seriesName
-	existing.VolumeNumber = volumeNumber
-	existing.TotalVolumes = totalVolumes
-
-	readingStatus := existing.ReadingStatus
-	if input.ReadingStatus != nil {
-		readingStatus = *input.ReadingStatus
-	}
-
-	readAt := existing.ReadAt
-	if input.ReadAt != nil {
-		readAt = *input.ReadAt
-	}
-
-	normalizedStatus, normalizedReadAt, normalizedCurrentPage, err := normalizeBookFields(existing.ItemType, readingStatus, readAt, existing.PageCount, existing.CurrentPage)
-	if err != nil {
+	if err := normalizeItem(&item, patch.sets("coverImage")); err != nil {
 		return Item{}, err
 	}
-
-	existing.ReadingStatus = normalizedStatus
-	existing.ReadAt = normalizedReadAt
-	existing.CurrentPage = normalizedCurrentPage
-	existing.UpdatedAt = time.Now().UTC()
-	return s.repo.Update(ctx, existing)
+	item.UpdatedAt = time.Now().UTC()
+	return s.repo.Update(ctx, item)
 }
 
 // Delete removes an item by ID and owner.
@@ -748,6 +547,69 @@ func validateItemType(itemType ItemType) error {
 	}
 }
 
+// normalizeItem trims and validates an item's editable fields and clears the
+// ones its item type does not use. Create runs it on the new item, and Update
+// on the stored item with the patch applied, so both enforce the same rules.
+// checkCover controls whether the cover image is sanitized and validated.
+func normalizeItem(item *Item, checkCover bool) error {
+	item.Title = strings.TrimSpace(item.Title)
+	if err := validateItemInput(item.Title, item.ItemType); err != nil {
+		return err
+	}
+	currentPage, err := normalizeCurrentPage(item.CurrentPage)
+	if err != nil {
+		return err
+	}
+	if checkCover {
+		if item.CoverImage, err = sanitizeCoverImage(item.CoverImage); err != nil {
+			return err
+		}
+	}
+
+	item.Creator = strings.TrimSpace(item.Creator)
+	item.Description = strings.TrimSpace(item.Description)
+	item.Notes = strings.TrimSpace(item.Notes)
+	item.ReleaseYear = normalizeYear(item.ReleaseYear)
+	item.ISBN13, item.ISBN10, item.PageCount = normalizeBookIdentifiers(
+		item.ItemType,
+		strings.TrimSpace(item.ISBN13),
+		strings.TrimSpace(item.ISBN10),
+		normalizePositiveInt(item.PageCount),
+	)
+	item.Format, item.Genre, item.Rating, item.RetailPriceUsd, item.GoogleVolumeId = normalizeExtendedBookFields(
+		item.ItemType,
+		item.Format,
+		item.Genre,
+		item.Rating,
+		item.RetailPriceUsd,
+		item.GoogleVolumeId,
+	)
+	item.Platform, item.AgeGroup, item.PlayerCount = normalizeGameFields(
+		item.ItemType,
+		item.Platform,
+		item.AgeGroup,
+		item.PlayerCount,
+	)
+
+	if item.SeriesName, item.VolumeNumber, item.TotalVolumes, err = normalizeSeriesFields(
+		item.ItemType,
+		item.SeriesName,
+		item.VolumeNumber,
+		item.TotalVolumes,
+	); err != nil {
+		return err
+	}
+
+	item.ReadingStatus, item.ReadAt, item.CurrentPage, err = normalizeBookFields(
+		item.ItemType,
+		item.ReadingStatus,
+		item.ReadAt,
+		item.PageCount,
+		currentPage,
+	)
+	return err
+}
+
 func compareItemsByCreatedDesc(a, b Item) int {
 	if a.CreatedAt.Equal(b.CreatedAt) {
 		return strings.Compare(a.Title, b.Title)
@@ -778,16 +640,6 @@ func normalizePositiveInt(value *int) *int {
 	}
 	v := *value
 	return &v
-}
-
-func normalizePositiveIntPtrPtr(value **int) *int {
-	if value == nil {
-		return nil
-	}
-	if *value == nil {
-		return nil
-	}
-	return normalizePositiveInt(*value)
 }
 
 func normalizeCurrentPage(value *int) (*int, error) {
