@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 
+import { addItemDeactivateGuard } from './pages/add-item/add-item.guard';
 import { authGuard } from './services/auth.guard';
 
 export const routes: Routes = [
@@ -37,6 +38,7 @@ export const routes: Routes = [
             },
             {
                 path: 'items/add',
+                canDeactivate: [addItemDeactivateGuard],
                 loadComponent: () =>
                     import('./pages/add-item/add-item-page.component').then(
                         (m) => m.AddItemPageComponent,

@@ -9,7 +9,7 @@
                 [selectedIndex]="selectedTab()"
                 (selectedIndexChange)="handleTabChange($event)"
             >
-                <mat-tab label="Search" [disabled]="csvImportBusy()">
+                <mat-tab label="Search" [disabled]="otherTabsDisabled()">
                     <div class="tab-body search-tab">
                         @if (seriesPrefill(); as prefill) {
                             <div class="series-prefill-notice">
@@ -155,7 +155,7 @@
                         ></app-lookup-results>
                     </div>
                 </mat-tab>
-                <mat-tab label="Manual Entry" [disabled]="csvImportBusy()">
+                <mat-tab label="Manual Entry" [disabled]="otherTabsDisabled()">
                     <div class="tab-body manual-entry">
                         <div class="manual-entry-header">
                             <div>
@@ -198,7 +198,10 @@
                 </mat-tab>
                 <mat-tab label="CSV Import">
                     <div class="tab-body">
-                        <app-csv-import (busyChange)="csvImportBusy.set($event)"></app-csv-import>
+                        <app-csv-import
+                            (busyChange)="csvImportBusy.set($event)"
+                            (reviewActiveChange)="csvReviewActive.set($event)"
+                        ></app-csv-import>
                     </div>
                 </mat-tab>
             </mat-tab-group>

@@ -22,16 +22,30 @@ import (
 // cancelled and chi responds with 504 Gateway Timeout.
 const requestTimeout = 60 * time.Second
 
-// csvImportPath is the CSV import route, which gets csvImportTimeout instead of
-// requestTimeout.
-const csvImportPath = "/api/items/import"
+// CSV import routes, which get csvImportTimeout instead of requestTimeout:
+// the single-request import, the read-only preview, and the reviewed commit.
+const (
+	csvImportPath        = "/api/items/import"
+	csvImportPreviewPath = "/api/items/import/preview"
+	csvImportCommitPath  = "/api/items/import/commit"
+)
 
 // csvImportTimeout bounds a CSV import request. It covers the upload (bounded by
 // the server's 15s ReadTimeout), the importer's 30s lookup budget
-// (importer.LookupBudget), and up to 1000 row inserts, with headroom. The
-// import write deadline (csvImportWriteDeadline) is longer still, so the
-// summary can be written even when the import is cut short.
+// (importer.LookupBudget, spent by imports and previews), and up to 1000 row
+// inserts (imports and commits), with headroom. The import write deadline
+// (csvImportWriteDeadline) is longer still, so the summary can be written even
+// when the import is cut short.
 const csvImportTimeout = 75 * time.Second
+
+func isCSVImportPath(path string) bool {
+	switch path {
+	case csvImportPath, csvImportPreviewPath, csvImportCommitPath:
+		return true
+	default:
+		return false
+	}
+}
 
 // newRequestTimeoutMiddleware applies chi's Timeout middleware, giving CSV
 // imports csvImportTimeout and every other request requestTimeout.
@@ -40,7 +54,7 @@ func newRequestTimeoutMiddleware() func(http.Handler) http.Handler {
 		standard := middleware.Timeout(requestTimeout)(next)
 		csvImport := middleware.Timeout(csvImportTimeout)(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodPost && r.URL.Path == csvImportPath {
+			if r.Method == http.MethodPost && isCSVImportPath(r.URL.Path) {
 				csvImport.ServeHTTP(w, r)
 				return
 			}
@@ -114,6 +128,8 @@ func NewRouter(cfg config.Config, svc *items.Service, catalogSvc *catalog.Servic
 				r.Get("/export", handler.ExportCSV)
 				r.Post("/", handler.Create)
 				r.Post("/import", handler.ImportCSV)
+				r.Post("/import/preview", handler.PreviewCSVImport)
+				r.Post("/import/commit", handler.CommitCSVImport)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", handler.Get)
 					r.Put("/", handler.Update)

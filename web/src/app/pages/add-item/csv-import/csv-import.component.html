@@ -2,79 +2,99 @@
     <div class="csv-header">
         <div>
             <h3>Bulk import</h3>
-            <p>Upload the Anthology CSV template to add multiple items at once.</p>
+            <p>
+                Upload the Anthology CSV template, review every row, then import the rows you
+                choose.
+            </p>
         </div>
     </div>
 
-    <div class="csv-instructions">
-        <h4>Required columns</h4>
-        <p>
-            Make sure your CSV includes this header row. Keep the column names lowercase to avoid
-            validation errors.
-        </p>
-        <div class="field-list">
-            @for (field of csvFields; track field) {
-                <span class="field">{{ field }}</span>
-            }
-        </div>
-        <p class="hint">
-            For books, you can leave the title blank if you include an ISBN. We'll fetch the
-            metadata automatically. Use the <code>coverImage</code> column for an HTTPS image URL
-            (or leave it blank to add one later). Duplicate titles or ISBNs are skipped and reported
-            below.
-        </p>
-    </div>
+    <p class="cdk-visually-hidden" aria-live="polite">{{ announcement() }}</p>
 
-    <form class="csv-form" (ngSubmit)="handleSubmit($event)" novalidate>
-        <label class="file-input">
-            <span class="label">CSV file</span>
-            <input
-                #csvInput
-                type="file"
-                accept=".csv,text/csv"
-                (change)="handleFileChange($event)"
-                [disabled]="busy()"
-            />
-            @if (selectedFile(); as file) {
-                <div class="file-meta">
-                    <mat-icon aria-hidden="true">attach_file</mat-icon>
-                    <span>{{ file.name }}</span>
-                </div>
-            }
-        </label>
-        <div class="csv-actions">
-            <button
-                mat-flat-button
-                color="primary"
-                type="button"
-                [disabled]="!selectedFile() || busy()"
-                (click)="handleSubmit($event)"
-            >
-                @if (!busy()) {
-                    <span>Upload CSV</span>
+    @if (stage() === 'upload') {
+        <div class="csv-instructions">
+            <h4>Required columns</h4>
+            <p>
+                Make sure your CSV includes this header row. Keep the column names lowercase to
+                avoid validation errors.
+            </p>
+            <div class="field-list">
+                @for (field of csvFields; track field) {
+                    <span class="field">{{ field }}</span>
                 }
-                @if (busy()) {
-                    <mat-progress-spinner diameter="18" mode="indeterminate"></mat-progress-spinner>
-                }
-            </button>
-            <button
-                mat-stroked-button
-                type="button"
-                (click)="handleReset()"
-                [disabled]="busy() || (!selectedFile() && !summary() && !error())"
-            >
-                Clear
-            </button>
-            <a
-                class="csv-template-link"
-                [href]="csvTemplateUrl"
-                download="anthology-import-template.csv"
-            >
-                <mat-icon aria-hidden="true">file_download</mat-icon>
-                <span>Download template</span>
-            </a>
+            </div>
+            <p class="hint">
+                For books, you can leave the title blank if you include an ISBN; you'll pick the
+                matching catalog edition before anything is imported. Use the
+                <code>coverImage</code> column for an HTTPS image URL (or leave it blank to add one
+                later). Rows with the same title or ISBN as an item in your library are skipped.
+            </p>
         </div>
-    </form>
+
+        <form class="csv-form" (ngSubmit)="handlePreview($event)" novalidate>
+            <label class="file-input">
+                <span class="label">CSV file</span>
+                <input
+                    #csvInput
+                    data-stage-heading
+                    type="file"
+                    accept=".csv,text/csv"
+                    (change)="handleFileChange($event)"
+                    [disabled]="previewBusy()"
+                />
+                @if (selectedFile(); as file) {
+                    <div class="file-meta">
+                        <mat-icon aria-hidden="true">attach_file</mat-icon>
+                        <span>{{ file.name }}</span>
+                    </div>
+                }
+            </label>
+            <div class="csv-actions">
+                <button
+                    mat-flat-button
+                    color="primary"
+                    type="button"
+                    class="preview-button"
+                    [disabled]="!selectedFile() || previewBusy()"
+                    (click)="handlePreview($event)"
+                >
+                    @if (previewBusy()) {
+                        <mat-progress-spinner
+                            diameter="18"
+                            mode="indeterminate"
+                            aria-hidden="true"
+                        ></mat-progress-spinner>
+                        <span>Checking file…</span>
+                    } @else {
+                        <span>Preview import</span>
+                    }
+                </button>
+                @if (previewBusy()) {
+                    <button mat-stroked-button type="button" (click)="handleCancelPreview()">
+                        Cancel
+                    </button>
+                } @else {
+                    <button
+                        mat-stroked-button
+                        type="button"
+                        (click)="handleReset()"
+                        [disabled]="!selectedFile() && !error()"
+                    >
+                        Clear
+                    </button>
+                }
+                <a
+                    class="csv-template-link"
+                    [href]="csvTemplateUrl"
+                    download="anthology-import-template.csv"
+                >
+                    <mat-icon aria-hidden="true">file_download</mat-icon>
+                    <span>Download template</span>
+                </a>
+            </div>
+            <p class="hint">Previewing checks the file and your library. Nothing is saved yet.</p>
+        </form>
+    }
 
     @if (error(); as message) {
         <div class="csv-feedback" role="alert">
@@ -83,38 +103,110 @@
         </div>
     }
 
-    @if (summary(); as summary) {
-        <div class="csv-summary">
-            <h4>Import summary</h4>
-            <p>Imported {{ summary.imported }} of {{ summary.totalRows }} rows.</p>
-            @if (summary.skippedDuplicates.length) {
-                <div class="summary-section">
-                    <h5>Skipped duplicates</h5>
-                    <ul>
-                        @for (entry of summary.skippedDuplicates; track entry.row) {
-                            <li>
-                                Row {{ entry.row }} ·
-                                {{ entry.title || entry.identifier || 'Untitled item' }} —
-                                {{ entry.reason }}
-                            </li>
-                        }
-                    </ul>
-                </div>
-            }
-            @if (summary.failed.length) {
-                <div class="summary-section">
-                    <h5>Rows with errors</h5>
-                    <ul>
-                        @for (entry of summary.failed; track entry.row) {
-                            <li>
-                                Row {{ entry.row }} ·
-                                {{ entry.title || entry.identifier || 'Untitled item' }}:
-                                {{ entry.error }}
-                            </li>
-                        }
-                    </ul>
-                </div>
-            }
-        </div>
+    @if (stage() === 'review' || stage() === 'committing') {
+        <section class="review-stage" aria-labelledby="csv-review-heading">
+            <div class="review-summary">
+                <h4 id="csv-review-heading" tabindex="-1" data-stage-heading>
+                    Review {{ rows().length }} rows
+                </h4>
+                <ul class="summary-chips" aria-label="Preview summary">
+                    <li class="chip chip-ready">{{ counts().ready }} ready</li>
+                    <li class="chip chip-duplicate">
+                        {{ counts().duplicate }} possible duplicate{{
+                            counts().duplicate === 1 ? '' : 's'
+                        }}
+                    </li>
+                    <li class="chip chip-needs-match">{{ counts().needsMatch }} need a match</li>
+                </ul>
+                <p class="hint">
+                    Nothing has been saved. Ready rows are selected; duplicates are always skipped.
+                    Rows that need a match are imported only after you choose a catalog edition.
+                </p>
+            </div>
+
+            <app-csv-import-review
+                [rows]="rows()"
+                [busy]="committing()"
+                (rowToggle)="handleToggle($event)"
+                (choose)="handleChoose($event)"
+                (selectAll)="handleSelectAll()"
+                (selectNone)="handleSelectNone()"
+            ></app-csv-import-review>
+
+            <div class="review-actions">
+                @if (committing()) {
+                    <p class="committing" role="status">
+                        <mat-progress-spinner
+                            diameter="18"
+                            mode="indeterminate"
+                            aria-hidden="true"
+                        ></mat-progress-spinner>
+                        Importing {{ sentRows() }} row{{ sentRows() === 1 ? '' : 's' }}… Keep this
+                        page open until it finishes.
+                    </p>
+                }
+                <button
+                    mat-flat-button
+                    color="primary"
+                    type="button"
+                    class="commit-button"
+                    [disabled]="committing() || counts().selected === 0"
+                    (click)="handleCommit()"
+                >
+                    Import {{ counts().selected }} selected row{{
+                        counts().selected === 1 ? '' : 's'
+                    }}
+                </button>
+                <button
+                    mat-stroked-button
+                    type="button"
+                    [disabled]="committing()"
+                    (click)="handleReset()"
+                >
+                    Cancel
+                </button>
+            </div>
+        </section>
+    }
+
+    @if (stage() === 'result') {
+        @if (outcome(); as outcome) {
+            <app-csv-import-result
+                [outcome]="outcome"
+                (importAnother)="handleReset()"
+            ></app-csv-import-result>
+        }
+    }
+
+    @if (stage() === 'unknown') {
+        <section class="unknown-result" role="alert" aria-labelledby="csv-unknown-heading">
+            <h4 id="csv-unknown-heading" tabindex="-1" data-stage-heading>
+                <mat-icon aria-hidden="true">help</mat-icon>
+                We couldn't confirm the import result
+            </h4>
+            <p>
+                The connection failed while {{ sentRows() }} row{{
+                    sentRows() === 1 ? ' was' : 's were'
+                }}
+                being saved, so some of them may have been added to your library. Anthology won't
+                retry the import on its own.
+            </p>
+            <p>
+                Preview the file again to check: rows that were saved will show as possible
+                duplicates and be skipped.
+            </p>
+            <div class="csv-actions">
+                <button
+                    mat-flat-button
+                    color="primary"
+                    type="button"
+                    (click)="handlePreviewAgain()"
+                >
+                    Preview this file again
+                </button>
+                <a mat-stroked-button routerLink="/">Back to library</a>
+                <button mat-button type="button" (click)="handleReset()">Import another CSV</button>
+            </div>
+        </section>
     }
 </div>

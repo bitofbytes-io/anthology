@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -338,37 +339,11 @@ func parseHistogramOptions(values url.Values) (items.HistogramOptions, error) {
 func (h *ItemHandler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 	user := UserFromContext(r.Context())
 
-	if h.importer == nil {
-		writeError(w, http.StatusNotImplemented, "CSV import is not available")
+	file, closeUpload, ok := h.openCSVUpload(w, r)
+	if !ok {
 		return
 	}
-
-	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(csvImportWriteDeadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
-		h.logger.Warn("extend csv import write deadline", "error", err)
-	}
-
-	r.Body = http.MaxBytesReader(w, r.Body, maxCSVUploadBytes)
-	if err := r.ParseMultipartForm(maxCSVUploadBytes); err != nil {
-		var maxErr *http.MaxBytesError
-		if errors.As(err, &maxErr) {
-			writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("CSV upload is too large (max %d bytes)", maxErr.Limit))
-			return
-		}
-		writeError(w, http.StatusBadRequest, "invalid CSV upload")
-		return
-	}
-	defer func() {
-		if r.MultipartForm != nil {
-			_ = r.MultipartForm.RemoveAll()
-		}
-	}()
-
-	file, _, err := r.FormFile("file")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "CSV file is required")
-		return
-	}
-	defer func() { _ = file.Close() }()
+	defer closeUpload()
 
 	summary, err := h.importer.Import(r.Context(), file, user.ID)
 	if err != nil {
@@ -389,6 +364,132 @@ func (h *ItemHandler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 		"failed", len(summary.Failed),
 	)
 	writeJSON(w, http.StatusOK, summary)
+}
+
+// PreviewCSVImport reports what importing an uploaded CSV would do without
+// saving anything.
+func (h *ItemHandler) PreviewCSVImport(w http.ResponseWriter, r *http.Request) {
+	user := UserFromContext(r.Context())
+
+	file, closeUpload, ok := h.openCSVUpload(w, r)
+	if !ok {
+		return
+	}
+	defer closeUpload()
+
+	preview, err := h.importer.Preview(r.Context(), file, user.ID)
+	if err != nil {
+		if errors.Is(err, importer.ErrInvalidCSV) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		h.logger.Error("csv import preview failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "import preview failed")
+		return
+	}
+
+	h.logger.Info("csv import previewed",
+		"user_id", user.ID,
+		"total_rows", preview.TotalRows,
+		"ready", preview.Ready,
+		"duplicates", preview.Duplicates,
+		"needs_match", preview.NeedsMatch,
+	)
+	writeJSON(w, http.StatusOK, preview)
+}
+
+// maxImportCommitBytes bounds a reviewed import body. It leaves room for a
+// full 5 MiB CSV after JSON escaping plus the catalog metadata merged into
+// up to importer.MaxLookupsPerImport rows.
+const maxImportCommitBytes int64 = 16 << 20
+
+// CommitCSVImport saves the rows the user reviewed in a preview, exactly as
+// reviewed, without catalog lookups.
+func (h *ItemHandler) CommitCSVImport(w http.ResponseWriter, r *http.Request) {
+	user := UserFromContext(r.Context())
+
+	if h.importer == nil {
+		writeError(w, http.StatusNotImplemented, "CSV import is not available")
+		return
+	}
+	h.extendCSVImportWriteDeadline(w)
+
+	var request importer.CommitRequest
+	if err := decodeJSONBodyLimit(w, r, &request, maxImportCommitBytes); err != nil {
+		writeJSONError(w, err)
+		return
+	}
+
+	result, err := h.importer.Commit(r.Context(), request, user.ID)
+	if err != nil {
+		if errors.Is(err, importer.ErrInvalidCommit) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if errors.Is(err, importer.ErrReviewedImportUnavailable) {
+			writeError(w, http.StatusNotImplemented, "CSV import is not available")
+			return
+		}
+		h.logger.Error("csv import commit failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "import failed before any rows were saved")
+		return
+	}
+
+	h.logger.Info("csv import committed",
+		"user_id", user.ID,
+		"rows", len(result.Rows),
+		"added", result.Added,
+		"skipped", result.Skipped,
+		"failed", result.Failed,
+		"interrupted", result.Interrupted,
+		"unprocessed", result.Unprocessed,
+	)
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *ItemHandler) extendCSVImportWriteDeadline(w http.ResponseWriter) {
+	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(csvImportWriteDeadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		h.logger.Warn("extend csv import write deadline", "error", err)
+	}
+}
+
+// openCSVUpload extends the write deadline and returns the uploaded "file"
+// part with a function that closes it and removes the parsed form, or writes
+// an error response and returns false.
+func (h *ItemHandler) openCSVUpload(w http.ResponseWriter, r *http.Request) (multipart.File, func(), bool) {
+	if h.importer == nil {
+		writeError(w, http.StatusNotImplemented, "CSV import is not available")
+		return nil, nil, false
+	}
+
+	h.extendCSVImportWriteDeadline(w)
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxCSVUploadBytes)
+	if err := r.ParseMultipartForm(maxCSVUploadBytes); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("CSV upload is too large (max %d bytes)", maxErr.Limit))
+			return nil, nil, false
+		}
+		writeError(w, http.StatusBadRequest, "invalid CSV upload")
+		return nil, nil, false
+	}
+	removeForm := func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		removeForm()
+		writeError(w, http.StatusBadRequest, "CSV file is required")
+		return nil, nil, false
+	}
+	return file, func() {
+		_ = file.Close()
+		removeForm()
+	}, true
 }
 
 // ExportCSV exports all items matching the given filters to CSV format.
@@ -455,7 +556,13 @@ const maxJSONBodyBytes int64 = 8 << 20 // 8 MiB (accommodates 5MB images after b
 var errPayloadTooLarge = errors.New("payload too large")
 
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) error {
-	limited := http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
+	return decodeJSONBodyLimit(w, r, dst, maxJSONBodyBytes)
+}
+
+// decodeJSONBodyLimit decodes a JSON body of at most limit bytes into dst,
+// rejecting unknown fields.
+func decodeJSONBodyLimit(w http.ResponseWriter, r *http.Request, dst any, limit int64) error {
+	limited := http.MaxBytesReader(w, r.Body, limit)
 	defer func() {
 		_ = limited.Close()
 	}()

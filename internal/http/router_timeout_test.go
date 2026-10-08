@@ -15,6 +15,9 @@ func TestRequestTimeoutMiddlewareGivesCSVImportLongerBudget(t *testing.T) {
 		want         time.Duration
 	}{
 		{http.MethodPost, csvImportPath, csvImportTimeout},
+		{http.MethodPost, csvImportPreviewPath, csvImportTimeout},
+		{http.MethodPost, csvImportCommitPath, csvImportTimeout},
+		{http.MethodGet, csvImportPreviewPath, requestTimeout},
 		{http.MethodGet, csvImportPath, requestTimeout},
 		{http.MethodPost, "/api/items", requestTimeout},
 		{http.MethodGet, "/api/shelves", requestTimeout},

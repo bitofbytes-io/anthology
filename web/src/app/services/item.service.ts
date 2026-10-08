@@ -14,7 +14,12 @@ import {
     ShelfStatusFilter,
     ShelfStatusFilters,
 } from '../models';
-import { CsvImportSummary } from '../models/import';
+import {
+    CsvCommitResult,
+    CsvCommitRow,
+    CsvImportPreview,
+    CsvImportSummary,
+} from '../models/import';
 
 @Injectable({ providedIn: 'root' })
 export class ItemService {
@@ -82,6 +87,18 @@ export class ItemService {
         const formData = new FormData();
         formData.append('file', file);
         return this.http.post<CsvImportSummary>(`${this.baseUrl}/import`, formData);
+    }
+
+    /** Reviews a CSV without saving anything. */
+    previewCsvImport(file: File): Observable<CsvImportPreview> {
+        const formData = new FormData();
+        formData.append('file', file);
+        return this.http.post<CsvImportPreview>(`${this.baseUrl}/import/preview`, formData);
+    }
+
+    /** Saves reviewed rows exactly as previewed; the server does no catalog lookups. */
+    commitCsvImport(rows: CsvCommitRow[]): Observable<CsvCommitResult> {
+        return this.http.post<CsvCommitResult>(`${this.baseUrl}/import/commit`, { rows });
     }
 
     exportCsv(filters?: {

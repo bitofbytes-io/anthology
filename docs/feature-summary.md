@@ -36,7 +36,7 @@ This document summarizes application features based on the current API and UI co
 ## CSV import and export
 - CSV importer accepts bulk uploads up to 5 MB.
 - Import workflow detects duplicates, tracks skipped and failed rows, and enriches missing book data via Google Books when possible.
-- UI provides a downloadable CSV template and an import summary with counts.
+- UI provides a downloadable CSV template, a read-only preview of every row (ready, possible duplicate, needs match), explicit catalog edition choice for titleless books, and a per-row result with exact counts.
 - CSV exporter outputs the catalog as a downloadable CSV for backups or analysis.
 
 ## Shelf management

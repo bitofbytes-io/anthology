@@ -15,6 +15,11 @@ type InMemoryRepository struct {
 	mu    sync.RWMutex
 	data  map[uuid.UUID]Item
 	order []uuid.UUID
+
+	// insertLocks holds one single-slot channel per owner; every insert for
+	// the owner holds it, and an insert session holds it until Close.
+	insertLocksMu sync.Mutex
+	insertLocks   map[uuid.UUID]chan struct{}
 }
 
 // NewInMemoryRepository constructs a repository seeded with optional initial items.
@@ -25,7 +30,73 @@ func NewInMemoryRepository(initial []Item) *InMemoryRepository {
 		data[item.ID] = item
 		order = append(order, item.ID)
 	}
-	return &InMemoryRepository{data: data, order: order}
+	return &InMemoryRepository{data: data, order: order, insertLocks: map[uuid.UUID]chan struct{}{}}
+}
+
+// lockInserts waits until no other insert or insert session for the owner is
+// running, and returns the function that releases the owner's insert lock.
+func (r *InMemoryRepository) lockInserts(ctx context.Context, ownerID uuid.UUID) (func(), error) {
+	r.insertLocksMu.Lock()
+	lock, ok := r.insertLocks[ownerID]
+	if !ok {
+		lock = make(chan struct{}, 1)
+		r.insertLocks[ownerID] = lock
+	}
+	r.insertLocksMu.Unlock()
+
+	release := func() { <-lock }
+	select {
+	case lock <- struct{}{}:
+		return release, nil
+	default:
+	}
+	select {
+	case lock <- struct{}{}:
+		return release, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// BeginExclusiveInserts makes every other insert for the owner wait until the
+// returned session is closed.
+func (r *InMemoryRepository) BeginExclusiveInserts(ctx context.Context, ownerID uuid.UUID) (InsertSession, error) {
+	unlock, err := r.lockInserts(ctx, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	return &memoryInsertSession{repo: r, ownerID: ownerID, unlock: unlock}, nil
+}
+
+type memoryInsertSession struct {
+	repo    *InMemoryRepository
+	ownerID uuid.UUID
+	once    sync.Once
+	unlock  func()
+}
+
+func (s *memoryInsertSession) List(ctx context.Context) ([]Item, error) {
+	return s.repo.List(ctx, ListOptions{OwnerID: s.ownerID})
+}
+
+func (s *memoryInsertSession) Insert(_ context.Context, item Item) (Item, error) {
+	if item.OwnerID != s.ownerID {
+		return Item{}, validationErr("item belongs to a different owner than the insert session")
+	}
+	return s.repo.store(item), nil
+}
+
+func (s *memoryInsertSession) Close() {
+	s.once.Do(s.unlock)
+}
+
+func (r *InMemoryRepository) store(item Item) Item {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.data[item.ID] = item
+	r.order = append(r.order, item.ID)
+	return item
 }
 
 // ownedItems yields the owner's items in insertion order. Callers must hold r.mu.
@@ -43,14 +114,15 @@ func (r *InMemoryRepository) ownedItems(ownerID uuid.UUID) iter.Seq[Item] {
 	}
 }
 
-// Create stores a new item.
-func (r *InMemoryRepository) Create(_ context.Context, item Item) (Item, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.data[item.ID] = item
-	r.order = append(r.order, item.ID)
-	return item, nil
+// Create stores a new item, waiting while an insert session holds the owner's
+// insert lock.
+func (r *InMemoryRepository) Create(ctx context.Context, item Item) (Item, error) {
+	unlock, err := r.lockInserts(ctx, item.OwnerID)
+	if err != nil {
+		return Item{}, err
+	}
+	defer unlock()
+	return r.store(item), nil
 }
 
 // Get returns an item by ID and owner.

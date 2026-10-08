@@ -97,16 +97,44 @@ func TestCSVExportImportRoundTrip(t *testing.T) {
 		t.Fatalf("export: %v", err)
 	}
 
-	target := items.NewService(items.NewInMemoryRepository(nil))
-	summary, err := NewCSVImporter(target, nil).Import(ctx, &buf, targetOwner)
-	if err != nil {
-		t.Fatalf("import: %v", err)
-	}
-	if summary.Imported != len(inputs) || len(summary.Failed) != 0 || len(summary.SkippedDuplicates) != 0 {
-		t.Fatalf("unexpected import summary: %+v", summary)
-	}
+	csvBytes := buf.Bytes()
 
-	imported, err := target.List(ctx, items.ListOptions{OwnerID: targetOwner})
+	t.Run("import", func(t *testing.T) {
+		target := items.NewService(items.NewInMemoryRepository(nil))
+		summary, err := NewCSVImporter(target, nil).Import(ctx, bytes.NewReader(csvBytes), targetOwner)
+		if err != nil {
+			t.Fatalf("import: %v", err)
+		}
+		if summary.Imported != len(inputs) || len(summary.Failed) != 0 || len(summary.SkippedDuplicates) != 0 {
+			t.Fatalf("unexpected import summary: %+v", summary)
+		}
+		assertRoundTrip(t, target, targetOwner, exported)
+	})
+
+	t.Run("preview and commit", func(t *testing.T) {
+		target := items.NewService(items.NewInMemoryRepository(nil))
+		importer := NewCSVImporter(target, nil)
+		preview, err := importer.Preview(ctx, bytes.NewReader(csvBytes), targetOwner)
+		if err != nil {
+			t.Fatalf("preview: %v", err)
+		}
+		if preview.Ready != len(inputs) {
+			t.Fatalf("expected every exported row to be ready, got %+v", preview)
+		}
+		result, err := importer.Commit(ctx, reviewedRows(t, preview, nil), targetOwner)
+		if err != nil {
+			t.Fatalf("commit: %v", err)
+		}
+		if result.Added != len(inputs) {
+			t.Fatalf("unexpected commit result: %+v", result)
+		}
+		assertRoundTrip(t, target, targetOwner, exported)
+	})
+}
+
+func assertRoundTrip(t *testing.T, target *items.Service, targetOwner uuid.UUID, exported []items.Item) {
+	t.Helper()
+	imported, err := target.List(context.Background(), items.ListOptions{OwnerID: targetOwner})
 	if err != nil {
 		t.Fatalf("list imported items: %v", err)
 	}

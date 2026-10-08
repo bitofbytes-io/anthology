@@ -35,16 +35,16 @@ Anthology is a split-stack application with a stateless Go API and an Angular Ma
 4. Results stream back to the UI, which can either quick-add an item or copy the metadata into the manual form.
 
 ### CSV import
-1. The Angular CSV tab builds a `FormData` payload and calls `POST /api/items/import`.
-2. `internal/http.ItemHandler.ImportCSV` enforces the upload size limit, passes the file to `internal/importer.CSVImporter`, and returns the summary as JSON.
-3. `CSVImporter` loads existing catalog items to detect duplicates, parses each row, and, when ISBN data exists, calls `internal/catalog.Service` to fill missing metadata via Google Books.
-4. The HTTP response includes counts of imported, skipped, and failed rows so the UI can display the progress timeline.
+1. The Angular CSV tab uploads the file to `POST /api/items/import/preview`. `CSVImporter.Preview` parses the whole file, validates each row with the same rules as item creation, checks duplicates against the library, and looks up catalog editions for titleless books. Nothing is saved.
+2. The user reviews the rows, chooses editions, and deselects rows they don't want.
+3. The UI sends the selected rows, with their exact reviewed items, to `POST /api/items/import/commit`. `CSVImporter.Commit` rechecks duplicates and saves each row without catalog lookups, returning an outcome per row. The request carries everything it needs, so any API replica can handle it.
+4. `POST /api/items/import` still imports in a single request (first catalog match, no review) for existing clients.
 
 ## Data contracts
 
 * **Catalog items** — `internal/items.Item` and `web/src/app/models/item.ts` share the same fields: `title`, `creator`, `itemType`, optional `releaseYear`, `pageCount`, notes/description/ISBNs, and an optional `coverImage` (either a remote URL or a small data URI capped at 500KB).
 * **Metadata lookup** — `internal/catalog.Metadata` is mapped to the UI via `ItemLookupService` so selected previews can be passed directly to `ItemService.create`.
-* **CSV summary** — `internal/importer.Summary` mirrors `web/src/app/models/import.ts`. Each summary includes `skippedDuplicates` and `failed` entries with the original row number for easy debugging.
+* **CSV import** — `internal/importer.Preview`, `CommitRequest`, `CommitResult`, and `Summary` mirror `web/src/app/models/import.ts`. `Preview` reports every data row of the file with its row number; `CommitResult` reports every submitted row; the single-request `Summary` reports an aggregate `imported` count and gives row numbers only for its skipped and failed entries (at most 100 of each, with `truncatedRecords` set beyond that).
 
 ## Testing expectations
 
