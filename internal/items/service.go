@@ -45,8 +45,68 @@ func (s *Service) Create(ctx context.Context, input CreateItemInput) (Item, erro
 		return Item{}, validationErr("ownerID is required")
 	}
 
+	item, err := newItem(input)
+	if err != nil {
+		return Item{}, err
+	}
+	item.ID = uuid.New()
+
+	item.CreatedAt = time.Now().UTC()
+	if input.CreatedAt != nil && !input.CreatedAt.IsZero() {
+		item.CreatedAt = input.CreatedAt.UTC()
+	}
+	item.UpdatedAt = item.CreatedAt
+	if input.UpdatedAt != nil && !input.UpdatedAt.IsZero() {
+		item.UpdatedAt = input.UpdatedAt.UTC()
+	}
+
+	return s.repo.Create(ctx, item)
+}
+
+// NormalizeCreateInput applies the validation and normalization Create would
+// apply to input, without persisting anything, and returns the input Create
+// would store. Normalizing the result again returns it unchanged. OwnerID and
+// the timestamps are passed through as given.
+func NormalizeCreateInput(input CreateItemInput) (CreateItemInput, error) {
+	item, err := newItem(input)
+	if err != nil {
+		return CreateItemInput{}, err
+	}
+	return CreateItemInput{
+		OwnerID:        input.OwnerID,
+		Title:          item.Title,
+		Creator:        item.Creator,
+		ItemType:       item.ItemType,
+		ReleaseYear:    item.ReleaseYear,
+		PageCount:      item.PageCount,
+		CurrentPage:    item.CurrentPage,
+		ISBN13:         item.ISBN13,
+		ISBN10:         item.ISBN10,
+		Description:    item.Description,
+		CoverImage:     item.CoverImage,
+		Format:         item.Format,
+		Genre:          item.Genre,
+		Rating:         item.Rating,
+		RetailPriceUsd: item.RetailPriceUsd,
+		GoogleVolumeId: item.GoogleVolumeId,
+		Platform:       item.Platform,
+		AgeGroup:       item.AgeGroup,
+		PlayerCount:    item.PlayerCount,
+		ReadingStatus:  item.ReadingStatus,
+		ReadAt:         item.ReadAt,
+		Notes:          item.Notes,
+		SeriesName:     item.SeriesName,
+		VolumeNumber:   item.VolumeNumber,
+		TotalVolumes:   item.TotalVolumes,
+		CreatedAt:      input.CreatedAt,
+		UpdatedAt:      input.UpdatedAt,
+	}, nil
+}
+
+// newItem builds the item Create stores for input, normalized and validated,
+// leaving the ID and timestamps unset.
+func newItem(input CreateItemInput) (Item, error) {
 	item := Item{
-		ID:             uuid.New(),
 		OwnerID:        input.OwnerID,
 		Title:          input.Title,
 		Creator:        input.Creator,
@@ -76,17 +136,7 @@ func (s *Service) Create(ctx context.Context, input CreateItemInput) (Item, erro
 	if err := normalizeItem(&item, true); err != nil {
 		return Item{}, err
 	}
-
-	item.CreatedAt = time.Now().UTC()
-	if input.CreatedAt != nil && !input.CreatedAt.IsZero() {
-		item.CreatedAt = input.CreatedAt.UTC()
-	}
-	item.UpdatedAt = item.CreatedAt
-	if input.UpdatedAt != nil && !input.UpdatedAt.IsZero() {
-		item.UpdatedAt = input.UpdatedAt.UTC()
-	}
-
-	return s.repo.Create(ctx, item)
+	return item, nil
 }
 
 // List returns catalogued items ordered by creation date descending.

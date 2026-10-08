@@ -123,8 +123,11 @@ export class AddItemPageComponent implements OnInit {
     readonly manualDraftSource = signal<{ query: string; label: string } | null>(null);
     readonly lastLookupSummary = signal<string | null>(null);
     readonly selectedTab = signal(0);
-    /** True while the CSV tab is uploading; the other tabs are disabled meanwhile. */
+    /** True while the CSV tab is saving rows; the route and other tabs are blocked meanwhile. */
     readonly csvImportBusy = signal(false);
+    /** True while a CSV review is open, so switching tabs cannot discard the review. */
+    readonly csvReviewActive = signal(false);
+    readonly otherTabsDisabled = computed(() => this.csvImportBusy() || this.csvReviewActive());
     readonly scanning = signal(false);
     readonly seriesPrefill = signal<{ seriesName: string; volumeNumber: number | null } | null>(
         null,
@@ -264,6 +267,17 @@ export class AddItemPageComponent implements OnInit {
         if (!this.busy()) {
             this.router.navigate(['/']);
         }
+    }
+
+    /** Route guard hook: leaving while CSV rows are saving would lose their result. */
+    canDeactivate(): boolean {
+        if (this.csvImportBusy()) {
+            this.notification.warn(
+                'Your CSV import is still saving. Stay on this page until it finishes.',
+            );
+            return false;
+        }
+        return true;
     }
 
     handleLookupSubmit(source: 'manual' | 'scanner' = 'manual'): void {

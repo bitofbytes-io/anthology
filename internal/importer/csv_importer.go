@@ -121,6 +121,78 @@ type lookupAllowance struct {
 	remaining int
 }
 
+// parsedRow is one non-empty CSV data row and its physical line number in the
+// file (the header is row 1).
+type parsedRow struct {
+	number int
+	values map[string]string
+}
+
+// readRows parses the whole upload before any row is prepared, so a malformed
+// or oversized file is rejected without side effects.
+func readRows(reader io.Reader) ([]parsedRow, error) {
+	csvReader := csv.NewReader(reader)
+	csvReader.FieldsPerRecord = -1
+	csvReader.TrimLeadingSpace = true
+
+	header, err := csvReader.Read()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("%w: file is empty", ErrInvalidCSV)
+		}
+		return nil, fmt.Errorf("%w: failed to read header", ErrInvalidCSV)
+	}
+
+	columns, err := normalizeHeader(header)
+	if err != nil {
+		return nil, err
+	}
+
+	// endLine is the file line the most recently read record ends on; quoted
+	// values may span lines.
+	endLine := func(record []string) int {
+		last := len(record) - 1
+		line, _ := csvReader.FieldPos(last)
+		return line + strings.Count(record[last], "\n")
+	}
+
+	var rows []parsedRow
+	rowNumber := 1
+	previousEnd := endLine(header)
+
+	for {
+		record, err := csvReader.Read()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, fmt.Errorf("%w: failed to read row %d", ErrInvalidCSV, rowNumber+1)
+		}
+		// The reader skips blank lines, but a spreadsheet still shows them as
+		// rows, so count them to keep row numbers matching the file.
+		start, _ := csvReader.FieldPos(0)
+		rowNumber += 1 + max(0, start-previousEnd-1)
+		previousEnd = endLine(record)
+		values := mapRecord(columns, record)
+		if isRowEmpty(values) {
+			continue
+		}
+
+		if len(rows) == MaxImportRows {
+			return nil, fmt.Errorf("%w: CSV exceeds maximum of %d rows", ErrInvalidCSV, MaxImportRows)
+		}
+
+		rows = append(rows, parsedRow{
+			number: rowNumber,
+			values: values,
+		})
+	}
+	return rows, nil
+}
+
+// Import creates an item for every valid row, looking up metadata for titleless
+// books and using the first catalog result. It is the original single-request
+// import; the reviewed flow uses Preview and Commit instead.
 func (i *CSVImporter) Import(ctx context.Context, reader io.Reader, ownerID uuid.UUID) (Summary, error) {
 	if i.items == nil {
 		return Summary{}, fmt.Errorf("%w: item store is not configured", ErrInvalidCSV)
@@ -133,58 +205,12 @@ func (i *CSVImporter) Import(ctx context.Context, reader io.Reader, ownerID uuid
 
 	tracker := newDuplicateTracker(existing)
 
-	csvReader := csv.NewReader(reader)
-	csvReader.FieldsPerRecord = -1
-	csvReader.TrimLeadingSpace = true
-
-	header, err := csvReader.Read()
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return Summary{}, fmt.Errorf("%w: file is empty", ErrInvalidCSV)
-		}
-		return Summary{}, fmt.Errorf("%w: failed to read header", ErrInvalidCSV)
-	}
-
-	columns, err := normalizeHeader(header)
+	rows, err := readRows(reader)
 	if err != nil {
 		return Summary{}, err
 	}
 
-	type parsedRow struct {
-		number int
-		values map[string]string
-	}
-
-	var rows []parsedRow
-	rowNumber := 1
-	totalRows := 0
-
-	for {
-		record, err := csvReader.Read()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return Summary{}, fmt.Errorf("%w: failed to read row %d", ErrInvalidCSV, rowNumber+1)
-		}
-		rowNumber++
-		values := mapRecord(columns, record)
-		if isRowEmpty(values) {
-			continue
-		}
-
-		totalRows++
-		if totalRows > MaxImportRows {
-			return Summary{}, fmt.Errorf("%w: CSV exceeds maximum of %d rows", ErrInvalidCSV, MaxImportRows)
-		}
-
-		rows = append(rows, parsedRow{
-			number: rowNumber,
-			values: values,
-		})
-	}
-
-	summary := Summary{TotalRows: totalRows}
+	summary := Summary{TotalRows: len(rows)}
 
 	lookupCtx, cancelLookups := context.WithTimeout(ctx, i.lookupBudget)
 	defer cancelLookups()
@@ -255,54 +281,85 @@ func (i *CSVImporter) Import(ctx context.Context, reader io.Reader, ownerID uuid
 }
 
 type rowMeta struct {
+	itemType   string
 	title      string
 	identifier string
 }
 
+// rowDraft is a CSV row parsed into item fields before any catalog lookup.
+type rowDraft struct {
+	input items.CreateItemInput
+	meta  rowMeta
+	// needsLookup marks a book row without a title: its metadata must come
+	// from the catalog using meta.identifier.
+	needsLookup bool
+}
+
 func (i *CSVImporter) buildInput(lookups *lookupAllowance, values map[string]string, ownerID uuid.UUID) (items.CreateItemInput, rowMeta, error) {
-	meta := rowMeta{}
+	draft, err := parseRow(values)
+	if err != nil {
+		return items.CreateItemInput{}, draft.meta, err
+	}
+	input := draft.input
+	input.OwnerID = ownerID
+	if draft.needsLookup {
+		candidates, err := i.lookupBook(lookups, draft.meta.identifier)
+		if err != nil {
+			return items.CreateItemInput{}, draft.meta, err
+		}
+		input, _ = mergeCatalogMetadata(input, candidates[0])
+		if input.Title == "" {
+			return items.CreateItemInput{}, draft.meta, fmt.Errorf("title is required for %s rows", input.ItemType)
+		}
+	}
+	return input, draft.meta, nil
+}
+
+// parseRow converts CSV values into item fields. The returned draft carries
+// the row's display metadata even when err is not nil.
+func parseRow(values map[string]string) (rowDraft, error) {
+	draft := rowDraft{}
+	meta := &draft.meta
 
 	rawType := strings.ToLower(values["itemtype"])
 	itemType := items.ItemType(strings.TrimSpace(rawType))
-	switch itemType {
-	case items.ItemTypeBook, items.ItemTypeGame, items.ItemTypeMovie, items.ItemTypeMusic:
-	default:
-		return items.CreateItemInput{}, meta, fmt.Errorf("itemType must be one of book, game, movie, or music")
-	}
+	meta.itemType = string(itemType)
 
 	title := strings.TrimSpace(values["title"])
 	meta.title = title
-	creator := strings.TrimSpace(values["creator"])
 	isbn13 := strings.TrimSpace(values["isbn13"])
 	isbn10 := strings.TrimSpace(values["isbn10"])
 	meta.identifier = firstNonEmpty(isbn13, isbn10)
 
+	switch itemType {
+	case items.ItemTypeBook, items.ItemTypeGame, items.ItemTypeMovie, items.ItemTypeMusic:
+	default:
+		return draft, fmt.Errorf("itemType must be one of book, game, movie, or music")
+	}
+
 	releaseYear, err := parseOptionalInt(values["releaseyear"], "releaseYear")
 	if err != nil {
-		return items.CreateItemInput{}, meta, err
+		return draft, err
 	}
 
 	pageCount, err := parseOptionalInt(values["pagecount"], "pageCount")
 	if err != nil {
-		return items.CreateItemInput{}, meta, err
+		return draft, err
 	}
 
 	currentPage, err := parseOptionalNonNegativeInt(values["currentpage"], "currentPage")
 	if err != nil {
-		return items.CreateItemInput{}, meta, err
+		return draft, err
 	}
 
-	format := items.Format(strings.TrimSpace(values["format"]))
-	genre := items.Genre(strings.TrimSpace(values["genre"]))
 	rating, err := parseOptionalIntAllowAny(values["rating"], "rating")
 	if err != nil {
-		return items.CreateItemInput{}, meta, err
+		return draft, err
 	}
 	retailPriceUsd, err := parseOptionalFloat(values["retailpriceusd"], "retailPriceUsd")
 	if err != nil {
-		return items.CreateItemInput{}, meta, err
+		return draft, err
 	}
-	googleVolumeId := strings.TrimSpace(values["googlevolumeid"])
 
 	statusValue := strings.ToLower(strings.TrimSpace(values["readingstatus"]))
 	var readingStatus items.BookStatus
@@ -311,137 +368,145 @@ func (i *CSVImporter) buildInput(lookups *lookupAllowance, values map[string]str
 	}
 	readAt, err := parseOptionalTime(values["readat"], "readAt")
 	if err != nil {
-		return items.CreateItemInput{}, meta, err
+		return draft, err
 	}
 
 	createdAt, err := parseOptionalTime(values["createdat"], "createdAt")
 	if err != nil {
-		return items.CreateItemInput{}, meta, err
+		return draft, err
 	}
 	updatedAt, err := parseOptionalTime(values["updatedat"], "updatedAt")
 	if err != nil {
-		return items.CreateItemInput{}, meta, err
+		return draft, err
 	}
 
-	description := strings.TrimSpace(values["description"])
-	coverImage := strings.TrimSpace(values["coverimage"])
-	notes := strings.TrimSpace(values["notes"])
-	platform := strings.TrimSpace(values["platform"])
-	ageGroup := strings.TrimSpace(values["agegroup"])
-	playerCount := strings.TrimSpace(values["playercount"])
-	seriesName := strings.TrimSpace(values["seriesname"])
 	volumeNumber, err := parseOptionalInt(values["volumenumber"], "volumeNumber")
 	if err != nil {
-		return items.CreateItemInput{}, meta, err
+		return draft, err
 	}
 	totalVolumes, err := parseOptionalInt(values["totalvolumes"], "totalVolumes")
 	if err != nil {
-		return items.CreateItemInput{}, meta, err
-	}
-
-	if itemType == items.ItemTypeBook && title == "" {
-		identifier := meta.identifier
-		if identifier == "" {
-			return items.CreateItemInput{}, meta, fmt.Errorf("provide a title or ISBN/UPC for books")
-		}
-		metadata, err := i.lookupBook(lookups, identifier)
-		if err != nil {
-			return items.CreateItemInput{}, meta, err
-		}
-
-		title = metadata.Title
-		if creator == "" {
-			creator = metadata.Creator
-		}
-		if releaseYear == nil && metadata.ReleaseYear != nil {
-			releaseYear = metadata.ReleaseYear
-		}
-		if pageCount == nil && metadata.PageCount != nil {
-			pageCount = metadata.PageCount
-		}
-		if isbn13 == "" {
-			isbn13 = metadata.ISBN13
-		}
-		if isbn10 == "" {
-			isbn10 = metadata.ISBN10
-		}
-		if description == "" {
-			description = metadata.Description
-		}
-		if coverImage == "" {
-			coverImage = metadata.CoverImage
-		}
-		genre = items.Genre(metadata.Genre)
-		retailPriceUsd = metadata.RetailPriceUsd
-		googleVolumeId = metadata.GoogleVolumeId
+		return draft, err
 	}
 
 	if title == "" {
-		return items.CreateItemInput{}, meta, fmt.Errorf("title is required for %s rows", itemType)
+		if itemType != items.ItemTypeBook {
+			return draft, fmt.Errorf("title is required for %s rows", itemType)
+		}
+		if meta.identifier == "" {
+			return draft, fmt.Errorf("provide a title or ISBN/UPC for books")
+		}
+		draft.needsLookup = true
 	}
 
-	return items.CreateItemInput{
-		OwnerID:        ownerID,
+	draft.input = items.CreateItemInput{
 		Title:          title,
-		Creator:        creator,
+		Creator:        strings.TrimSpace(values["creator"]),
 		ItemType:       itemType,
 		ReleaseYear:    releaseYear,
 		PageCount:      pageCount,
 		CurrentPage:    currentPage,
 		ISBN13:         isbn13,
 		ISBN10:         isbn10,
-		Description:    description,
-		CoverImage:     coverImage,
-		Format:         format,
-		Genre:          genre,
+		Description:    strings.TrimSpace(values["description"]),
+		CoverImage:     strings.TrimSpace(values["coverimage"]),
+		Format:         items.Format(strings.TrimSpace(values["format"])),
+		Genre:          items.Genre(strings.TrimSpace(values["genre"])),
 		Rating:         rating,
 		RetailPriceUsd: retailPriceUsd,
-		GoogleVolumeId: googleVolumeId,
-		Platform:       platform,
-		AgeGroup:       ageGroup,
-		PlayerCount:    playerCount,
-		SeriesName:     seriesName,
+		GoogleVolumeId: strings.TrimSpace(values["googlevolumeid"]),
+		Platform:       strings.TrimSpace(values["platform"]),
+		AgeGroup:       strings.TrimSpace(values["agegroup"]),
+		PlayerCount:    strings.TrimSpace(values["playercount"]),
+		SeriesName:     strings.TrimSpace(values["seriesname"]),
 		VolumeNumber:   volumeNumber,
 		TotalVolumes:   totalVolumes,
 		ReadingStatus:  readingStatus,
 		ReadAt:         readAt,
-		Notes:          notes,
+		Notes:          strings.TrimSpace(values["notes"]),
 		CreatedAt:      createdAt,
 		UpdatedAt:      updatedAt,
-	}, meta, nil
+	}
+	return draft, nil
 }
 
-func (i *CSVImporter) lookupBook(lookups *lookupAllowance, query string) (catalog.Metadata, error) {
+// mergeCatalogMetadata fills the catalog-provided fields a titleless book row
+// left blank. Values present in the CSV always win; overrides lists the fields
+// where the CSV kept its own value over a different catalog value.
+func mergeCatalogMetadata(input items.CreateItemInput, metadata catalog.Metadata) (merged items.CreateItemInput, overrides []string) {
+	mergeString := func(field string, csvValue *string, catalogValue string) {
+		switch {
+		case *csvValue == "":
+			*csvValue = catalogValue
+		case catalogValue != "" && catalogValue != *csvValue:
+			overrides = append(overrides, field)
+		}
+	}
+	mergeInt := func(field string, csvValue **int, catalogValue *int) {
+		switch {
+		case *csvValue == nil:
+			*csvValue = catalogValue
+		case catalogValue != nil && *catalogValue != **csvValue:
+			overrides = append(overrides, field)
+		}
+	}
+
+	if input.Title == "" {
+		input.Title = metadata.Title
+	}
+	mergeString("creator", &input.Creator, metadata.Creator)
+	mergeInt("releaseYear", &input.ReleaseYear, metadata.ReleaseYear)
+	mergeInt("pageCount", &input.PageCount, metadata.PageCount)
+	mergeString("isbn13", &input.ISBN13, metadata.ISBN13)
+	mergeString("isbn10", &input.ISBN10, metadata.ISBN10)
+	mergeString("description", &input.Description, metadata.Description)
+	mergeString("coverImage", &input.CoverImage, metadata.CoverImage)
+	genre := string(input.Genre)
+	mergeString("genre", &genre, metadata.Genre)
+	input.Genre = items.Genre(genre)
+	switch {
+	case input.RetailPriceUsd == nil:
+		input.RetailPriceUsd = metadata.RetailPriceUsd
+	case metadata.RetailPriceUsd != nil && *metadata.RetailPriceUsd != *input.RetailPriceUsd:
+		overrides = append(overrides, "retailPriceUsd")
+	}
+	mergeString("googleVolumeId", &input.GoogleVolumeId, metadata.GoogleVolumeId)
+	return input, overrides
+}
+
+// lookupBook returns every catalog result for a titleless book row, in catalog
+// order, or an error explaining why the row cannot be filled in.
+func (i *CSVImporter) lookupBook(lookups *lookupAllowance, query string) ([]catalog.Metadata, error) {
 	if i.catalog == nil {
-		return catalog.Metadata{}, fmt.Errorf("%w: metadata lookup is unavailable", ErrInvalidCSV)
+		return nil, fmt.Errorf("%w: metadata lookup is unavailable", ErrInvalidCSV)
 	}
 	if lookups.remaining <= 0 {
-		return catalog.Metadata{}, fmt.Errorf("metadata lookup skipped: this import reached its limit of %d ISBN lookups; add a title to this row or import it in a smaller file", i.maxLookups)
+		return nil, fmt.Errorf("metadata lookup skipped: this import reached its limit of %d ISBN lookups; add a title to this row or import it in a smaller file", i.maxLookups)
 	}
 	if lookups.ctx.Err() != nil {
-		return catalog.Metadata{}, errLookupBudgetExhausted
+		return nil, errLookupBudgetExhausted
 	}
 	lookups.remaining--
 
 	metadata, err := i.catalog.Lookup(lookups.ctx, query, catalog.CategoryBook)
 	if err != nil {
 		if lookups.ctx.Err() != nil {
-			return catalog.Metadata{}, errLookupBudgetExhausted
+			return nil, errLookupBudgetExhausted
 		}
 		if errors.Is(err, catalog.ErrNotFound) {
-			return catalog.Metadata{}, fmt.Errorf("no metadata found for %s", query)
+			return nil, fmt.Errorf("no metadata found for %s", query)
 		}
 		if errors.Is(err, catalog.ErrInvalidQuery) {
-			return catalog.Metadata{}, fmt.Errorf("ISBN/UPC %s is not valid", query)
+			return nil, fmt.Errorf("ISBN/UPC %s is not valid", query)
 		}
 		// Unexpected lookup failures can carry upstream transport details, so
 		// report a generic message instead of returning them to the browser.
-		return catalog.Metadata{}, errMetadataLookupFailed
+		return nil, errMetadataLookupFailed
 	}
 	if len(metadata) == 0 {
-		return catalog.Metadata{}, fmt.Errorf("no metadata found for %s", query)
+		return nil, fmt.Errorf("no metadata found for %s", query)
 	}
-	return metadata[0], nil
+	return metadata, nil
 }
 
 func normalizeHeader(header []string) (map[int]string, error) {
@@ -588,51 +653,4 @@ func firstIdentifier(input items.CreateItemInput) string {
 		return input.ISBN10
 	}
 	return ""
-}
-
-type duplicateTracker struct {
-	known map[string]string
-}
-
-func newDuplicateTracker(existing []items.Item) *duplicateTracker {
-	tracker := &duplicateTracker{known: map[string]string{}}
-	for _, item := range existing {
-		tracker.store("title", strings.ToLower(strings.TrimSpace(item.Title)))
-		tracker.store("isbn13", items.NormalizeIdentifier(item.ISBN13))
-		tracker.store("isbn10", items.NormalizeIdentifier(item.ISBN10))
-	}
-	return tracker
-}
-
-func (t *duplicateTracker) store(field string, value string) {
-	if value == "" {
-		return
-	}
-	t.known[field+":"+value] = field
-}
-
-func (t *duplicateTracker) Check(input items.CreateItemInput) (string, bool) {
-	title := strings.ToLower(strings.TrimSpace(input.Title))
-	if title != "" {
-		if reason, ok := t.known["title:"+title]; ok {
-			return fmt.Sprintf("duplicate %s", reason), true
-		}
-	}
-	if isbn := items.NormalizeIdentifier(input.ISBN13); isbn != "" {
-		if reason, ok := t.known["isbn13:"+isbn]; ok {
-			return fmt.Sprintf("duplicate %s", reason), true
-		}
-	}
-	if isbn := items.NormalizeIdentifier(input.ISBN10); isbn != "" {
-		if reason, ok := t.known["isbn10:"+isbn]; ok {
-			return fmt.Sprintf("duplicate %s", reason), true
-		}
-	}
-	return "", false
-}
-
-func (t *duplicateTracker) Add(input items.CreateItemInput) {
-	t.store("title", strings.ToLower(strings.TrimSpace(input.Title)))
-	t.store("isbn13", items.NormalizeIdentifier(input.ISBN13))
-	t.store("isbn10", items.NormalizeIdentifier(input.ISBN10))
 }

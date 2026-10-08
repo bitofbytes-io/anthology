@@ -71,7 +71,9 @@ Base URL: `http://<host>:<port>`. Application endpoints under `/api/*` require t
 | GET | `/api/items/histogram` | Letter counts for alphabet rail. | `ItemHandler.Histogram` |
 | GET | `/api/items/duplicates` | Check potential duplicates by title/ISBN. | `ItemHandler.Duplicates` |
 | POST | `/api/items` | Create item. | `ItemHandler.Create` |
-| POST | `/api/items/import` | CSV upload (5 MiB limit) for bulk import. | `ItemHandler.ImportCSV` |
+| POST | `/api/items/import` | CSV upload (5 MiB limit) for single-request bulk import (kept for compatibility). | `ItemHandler.ImportCSV` |
+| POST | `/api/items/import/preview` | CSV upload (5 MiB limit); read-only review of every row. Saves nothing. | `ItemHandler.PreviewCSVImport` |
+| POST | `/api/items/import/commit` | Save reviewed rows exactly as previewed (JSON, 16 MiB limit); no catalog lookups. | `ItemHandler.CommitCSVImport` |
 | GET | `/api/items/{id}` | Get item by UUID. | `ItemHandler.Get` |
 | PUT | `/api/items/{id}` | Update mutable fields (partial). | `ItemHandler.Update` |
 | DELETE | `/api/items/{id}` | Delete item. | `ItemHandler.Delete` |
@@ -86,8 +88,9 @@ Base URL: `http://<host>:<port>`. Application endpoints under `/api/*` require t
 ### Error contract
 
 * JSON responses with `{"error": "<message>"}` for errors.
-* Unknown fields rejected on create/update (strict JSON decode); payload limited to 1 MiB.
-* CSV upload returns 400 on invalid/missing file, 413 on size overflow, 500 on importer errors.
+* Unknown fields rejected on create/update and import commits (strict JSON decode); payload limited to 8 MiB (16 MiB for import commits).
+* CSV upload and preview return 400 on invalid/missing file, 413 on size overflow, 500 on importer errors.
+* Import commit returns 400 (`invalid import request: ...`) or 413 before saving anything; per-row problems are reported in the result instead.
 * Catalog lookup maps validation to 400, unsupported category to 400, not-found to 404, upstream failure to 502.
 
 ## Data model (API surface)
@@ -140,6 +143,23 @@ CSV import summary (`internal/importer.Summary`):
 { "totalRows": 5, "imported": 3, "skippedDuplicates": [{ "row": 3, "title": "Dune", "identifier": "9780441172719", "reason": "duplicate isbn13" }], "failed": [{ "row": 4, "title": "", "identifier": "999", "error": "ISBN/UPC 999 is not valid" }] }
 ```
 
+CSV import preview (`internal/importer.Preview`), abbreviated:
+
+```json
+{ "totalRows": 3, "ready": 1, "duplicates": 1, "needsMatch": 1, "rows": [
+  { "row": 2, "status": "ready", "itemType": "book", "title": "Dune", "identifier": "", "item": { /* create body + createdAt/updatedAt */ }, "keys": ["title:dune"] },
+  { "row": 3, "status": "duplicate", "item": { /* ... */ }, "libraryMatches": [{ "field": "title", "itemId": "uuid", "title": "Dune", "creator": "", "itemType": "book", "isbn13": "", "isbn10": "" }] },
+  { "row": 4, "status": "needs_match", "identifier": "9780441172719", "problem": "Choose the catalog edition to import for this ISBN.", "candidates": [{ "item": { /* ... */ }, "keys": [], "libraryMatches": [], "csvOverrides": ["creator"] }] }
+] }
+```
+
+CSV import commit request and result (`internal/importer.CommitRequest`, `CommitResult`):
+
+```json
+{ "rows": [{ "row": 2, "item": { /* exactly the previewed item or chosen candidate */ } }] }
+{ "added": 1, "skipped": 0, "failed": 0, "interrupted": 0, "unprocessed": 0, "rows": [{ "row": 2, "status": "added", "title": "Dune", "identifier": "", "itemId": "uuid" }] }
+```
+
 ## Validation rules (service layer)
 
 Items:
@@ -159,6 +179,13 @@ CSV importer:
 * Book rows with missing title but ISBN/UPC will call catalog lookup to backfill metadata; otherwise title is required.
 * Lookups are capped at 100 per import and share a 30s time budget; rows beyond either limit are reported in `failed` and can be re-imported with a title or in a smaller file.
 * Upload capped at 5 MiB (HTTP handler).
+* Row numbers are the row in the file (header is row 1), counting blank lines and multi-line quoted values the way a spreadsheet does.
+
+CSV import preview and commit (the flow the UI uses):
+* Preview parses the whole file first, then validates and normalizes each row with `items.NormalizeCreateInput` (the same rules `items.Service.Create` applies) without writing. Rows are `ready`, `duplicate` (exact title/ISBN-13/ISBN-10 match with the owner's library or an earlier ready row of the file), or `needs_match` (a parse or validation problem, a failed lookup, or a titleless book whose catalog editions must be chosen). Titleless book rows offer every catalog result (up to 5) instead of the first; CSV values always win over catalog values, and `csvOverrides` lists where they differ. Lookups keep the 100-lookup / 30 s limits.
+* Commit is stateless, so any API replica can serve it: the request carries the reviewed items themselves, not a preview ID. It grants nothing beyond `POST /api/items` plus the CSV timestamp columns the import already accepts: the owner is always the signed-in user, every item is re-validated, row numbers must be unique data rows, at most 1000 rows. It never calls the catalog.
+* Commit rechecks duplicates against the library as it is when the commit starts and against rows saved earlier in the same request, then saves rows in row order and reports each one as `added`, `skipped`, `failed`, `interrupted` (its save was cut short when the request ended, so it may or may not be saved), or `unprocessed` (never attempted). Counts always add up to the submitted rows. There is no rollback: rows saved before a failure stay saved.
+* Repeating a commit is safe only in sequence: the repeat skips rows the first one saved. Two overlapping commits for the same owner can both save a row, because the library check is not atomic with the insert and there is no unique constraint. Browsers may also resend a POST on their own when a reused connection closes before any response arrives.
 * Optional columns match the export format (including `seriesName`, `volumeNumber`, `totalVolumes`); older files without them still import. For rows whose `schemaVersion` is 2 or later (current Anthology exports), a leading `'` added by the exporter before `=`, `+`, `-`, `@`, or tab is stripped; version 1 exports and third-party files are imported verbatim.
 
 CSV exporter:
@@ -245,6 +272,34 @@ sequenceDiagram
     API-->>UI: 200 OK + summary
 ```
 
+### CSV import preview and commit
+
+```mermaid
+sequenceDiagram
+    participant UI
+    participant API
+    participant Importer as CSVImporter
+    participant Items as items.Service
+    participant Catalog as catalog.Service
+    UI->>API: POST /api/items/import/preview (multipart file)
+    API->>Importer: Preview(ctx, file, owner)
+    Importer->>Items: List existing (read only)
+    loop rows
+        Importer->>Catalog: Lookup ISBN (titleless books only)
+    end
+    Importer-->>API: Preview {rows, statuses, candidates}
+    API-->>UI: 200 OK (nothing saved)
+    Note over UI: User reviews rows and chooses editions
+    UI->>API: POST /api/items/import/commit {rows: [{row, item}]}
+    API->>Importer: Commit(ctx, rows, owner)
+    Importer->>Items: List existing (recheck duplicates)
+    loop selected rows
+        Importer->>Items: Create item (no catalog lookup)
+    end
+    Importer-->>API: CommitResult {per-row outcomes}
+    API-->>UI: 200 OK + result
+```
+
 ### Shelf layout update
 
 ```mermaid
@@ -265,9 +320,9 @@ sequenceDiagram
 ## Operational notes
 
 * CORS defaults: `http://localhost:4200,http://localhost:8080`; override via `ALLOWED_ORIGINS`.
-* Timeouts: Request timeout middleware 60s (75s for `POST /api/items/import`); HTTP server read/write 15s, idle 60s. CSV import extends its write deadline to 90s so the summary outlives its request timeout; if the import context expires, remaining rows are reported in `failed` and the summary sets `interrupted`.
+* Timeouts: Request timeout middleware 60s (75s for `POST /api/items/import`, `/import/preview`, and `/import/commit`); HTTP server read/write 15s, idle 60s. The CSV routes extend their write deadline to 90s so the response outlives the request timeout; if the import context expires, remaining rows are reported in `failed` and the summary sets `interrupted` (commits report them as `interrupted`/`unprocessed`).
 * Logging: `slog` text handler; HTTP middleware logs method/path/status/duration.
-* CSV upload size guard at handler level; JSON max 1 MiB.
+* CSV upload size guard at handler level (5 MiB); JSON max 8 MiB, 16 MiB for import commits.
 * Postgres is required; local dev should point at a local database.
 
 ## How to run locally

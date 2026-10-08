@@ -1,0 +1,63 @@
+<section class="import-result" aria-labelledby="csv-result-heading">
+    <h4 id="csv-result-heading" tabindex="-1" data-stage-heading>
+        {{ stoppedEarly() ? 'Import stopped early' : 'Import finished' }}
+    </h4>
+    <p class="result-total">
+        {{ outcome().rows.length }} row{{ outcome().rows.length === 1 ? '' : 's' }} in the file.
+        @if (stoppedEarly()) {
+            The import ran out of time before every selected row was saved. Rows already added stay
+            in your library; preview the file again to import the rest.
+        }
+    </p>
+
+    @if (skippedAtImport(); as skipped) {
+        <p class="result-note">
+            {{ skipped }} selected row{{ skipped === 1 ? ' was' : 's were' }} already in your
+            library when the import ran, so {{ skipped === 1 ? 'it was' : 'they were' }} skipped.
+            They may have been saved after the preview, for example from another tab or by an
+            earlier attempt of this import whose result was lost.
+        </p>
+    }
+
+    <ul class="count-tiles" aria-label="Import totals">
+        @for (tile of tiles(); track tile.status) {
+            <li class="tile" [class]="tile.count ? 'tile-' + tile.status : ''">
+                <span class="tile-count">{{ tile.count }}</span>
+                <span class="tile-label">{{ statusLabels[tile.status] }}</span>
+            </li>
+        }
+    </ul>
+
+    <ul class="outcome-list" aria-label="Result for each row">
+        @for (row of outcome().rows; track row.row) {
+            <li class="outcome-row" [class]="'outcome-' + row.status">
+                <span class="row-number">Row {{ row.row }}</span>
+                <span class="outcome-text">
+                    <span class="outcome-title">{{
+                        row.title || row.identifier || 'Untitled row'
+                    }}</span>
+                    @if (row.message) {
+                        <span class="outcome-message">{{ row.message }}</span>
+                    }
+                </span>
+                <span class="outcome-status">{{ statusLabels[row.status] }}</span>
+                @if (row.itemId) {
+                    <a class="outcome-link" [routerLink]="['/items', row.itemId, 'edit']">Open</a>
+                } @else if (row.libraryMatches.length) {
+                    <a
+                        class="outcome-link"
+                        [routerLink]="['/items', row.libraryMatches[0].itemId, 'edit']"
+                        >Open existing</a
+                    >
+                }
+            </li>
+        }
+    </ul>
+
+    <div class="result-actions">
+        <a mat-flat-button color="primary" routerLink="/">Back to library</a>
+        <button mat-stroked-button type="button" (click)="importAnother.emit()">
+            Import another CSV
+        </button>
+    </div>
+</section>

@@ -13,6 +13,7 @@ import { BehaviorSubject, of, throwError } from 'rxjs';
 import { MatDialog } from '@angular/material/dialog';
 
 import { AddItemPageComponent } from './add-item-page.component';
+import { addItemDeactivateGuard } from './add-item.guard';
 import { ItemService } from '../../services/item.service';
 import { Item, ItemForm } from '../../models';
 import { ItemLookupService } from '../../services/item-lookup.service';
@@ -551,5 +552,37 @@ describe(AddItemPageComponent.name, () => {
         fixture.componentInstance.csvImportBusy.set(false);
         fixture.detectChanges();
         expect(tabs().every((tab) => tab.getAttribute('aria-disabled') === 'false')).toBe(true);
+    });
+
+    it('keeps the CSV tab selected while a review is open', () => {
+        const fixture = createComponent();
+        const tabs = (): HTMLElement[] =>
+            Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]'));
+
+        fixture.componentInstance.csvReviewActive.set(true);
+        fixture.detectChanges();
+        expect(tabs().map((tab) => tab.getAttribute('aria-disabled'))).toEqual([
+            'true',
+            'true',
+            'false',
+        ]);
+    });
+
+    it('blocks leaving the page only while CSV rows are saving', () => {
+        const fixture = createComponent();
+        const page = fixture.componentInstance;
+
+        page.csvReviewActive.set(true);
+        expect(page.canDeactivate()).toBe(true);
+
+        page.csvImportBusy.set(true);
+        snackBarSpy.open.mockClear();
+        expect(page.canDeactivate()).toBe(false);
+        expect(snackBarSpy.open).toHaveBeenCalledWith(
+            'Your CSV import is still saving. Stay on this page until it finishes.',
+            'Dismiss',
+            expect.anything(),
+        );
+        expect(addItemDeactivateGuard(page, {} as never, {} as never, {} as never)).toBe(false);
     });
 });

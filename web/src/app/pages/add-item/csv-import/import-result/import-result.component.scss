@@ -1,0 +1,131 @@
+.import-result {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    border: 1px solid var(--mat-sys-outline-variant);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    background: var(--mat-sys-surface-container-low);
+    color: var(--mat-sys-on-surface);
+}
+
+h4 {
+    margin: 0;
+}
+
+.result-total,
+.result-note {
+    margin: 0;
+    color: var(--mat-sys-on-surface-variant);
+}
+
+.result-note {
+    border-left: 3px solid var(--mat-sys-secondary);
+    padding-left: 0.75rem;
+}
+
+.count-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.tile {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    border-radius: 12px;
+    padding: 0.75rem;
+    background: var(--mat-sys-surface-container-high);
+}
+
+.tile-added {
+    background: var(--mat-sys-primary-container);
+    color: var(--mat-sys-on-primary-container);
+}
+
+.tile-failed,
+.tile-interrupted,
+.tile-unknown {
+    background: var(--mat-sys-error-container);
+    color: var(--mat-sys-on-error-container);
+}
+
+.tile-count {
+    font-size: 1.5rem;
+    font-weight: 500;
+}
+
+.outcome-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    max-height: 28rem;
+    overflow-y: auto;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.outcome-row {
+    display: grid;
+    grid-template-columns: 4.5rem minmax(0, 1fr) auto auto;
+    gap: 0.25rem 0.75rem;
+    align-items: center;
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    background: var(--mat-sys-surface-container-lowest);
+}
+
+.row-number,
+.outcome-message {
+    color: var(--mat-sys-on-surface-variant);
+    font-size: 0.875rem;
+}
+
+.outcome-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.outcome-status {
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.outcome-added .outcome-status {
+    color: var(--mat-sys-primary);
+}
+
+.outcome-failed .outcome-status,
+.outcome-interrupted .outcome-status,
+.outcome-unknown .outcome-status {
+    color: var(--mat-sys-error);
+}
+
+.outcome-link {
+    color: var(--mat-sys-primary);
+    font-weight: 500;
+}
+
+.result-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+@media (width <= 600px) {
+    .outcome-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .outcome-text {
+        grid-column: 1 / -1;
+    }
+}

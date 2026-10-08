@@ -93,7 +93,9 @@ Tabs:
    * Displays badge noting which query populated the draft (if coming from search).
 3) **CSV Import**:
    * Shows required columns; links `csv-import-template.csv`.
-   * Upload via `ItemService.importCsv`; shows progress status; summarizes imported/skipped/failed rows; allows reset.
+   * Preview via `ItemService.previewCsvImport` (read only), then a review list: ready rows are selected, duplicates are skipped with a comparison and an "Open existing" link, and titleless books need an explicit catalog edition. Choosing an edition re-runs the duplicate rule in the browser (`csv-import-review.ts`), so a choice can make that row or a later row a duplicate.
+   * `ItemService.commitCsvImport` sends only the selected rows with their exact reviewed items. While saving, controls are disabled, other tabs are locked, the route guard (`add-item.guard.ts`) blocks navigation, and unloading prompts. The result lists every row as added, skipped, failed, stopped while saving, or not imported.
+   * If the commit request fails without a server answer (no response, gateway error), the UI says the outcome is unknown, does not retry, and offers a new preview, where saved rows show as duplicates.
    * Handler auto-selects tab when importing or on error.
 
 ### Edit Item (`EditItemPageComponent`)
@@ -121,7 +123,7 @@ Tabs:
 ## Data models (UI)
 
 * `Item` / `ItemForm` mirror API fields (`itemType`, `releaseYear`, `pageCount`, `isbn13/10`, `coverImage`, `readingStatus`, `readAt`, `notes`, `shelfPlacement` summary).
-* `CsvImportSummary`: `{ totalRows, imported, skippedDuplicates[], failed[] }` used by Add Item CSV tab.
+* `CsvImportPreview`, `CsvCommitRow`, `CsvCommitResult` (`models/import.ts`) mirror `internal/importer`'s preview and commit types; `CsvImportSummary` mirrors the single-request import summary.
 
 ## UI ↔ API flows
 
@@ -147,9 +149,11 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     User -->|select csv| AddItem[AddItemPage CSV tab]
-    AddItem --> ItemSvc.importCsv --> API[/api/items/import/]
-    API --> AddItem
-    AddItem -->|render| Status["Imported/Skipped/Failed summary"]
+    AddItem --> Preview[ItemSvc.previewCsvImport] --> PreviewAPI[/api/items/import/preview/]
+    PreviewAPI -->|rows, nothing saved| Review["Review: select rows, choose editions"]
+    Review --> Commit[ItemSvc.commitCsvImport] --> CommitAPI[/api/items/import/commit/]
+    CommitAPI -->|per-row outcomes| Result["Added/Skipped/Failed/Not imported"]
+    Commit -->|no answer| Unknown["Outcome unknown: preview again"]
 ```
 
 ### Shelf placement drill-in

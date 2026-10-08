@@ -1,0 +1,175 @@
+<div class="review-toolbar">
+    <div class="filters" role="group" aria-label="Show rows">
+        @for (option of filters; track option.value) {
+            <button
+                mat-stroked-button
+                type="button"
+                class="filter"
+                [class.active]="filter() === option.value"
+                [attr.aria-pressed]="filter() === option.value"
+                (click)="filter.set(option.value)"
+            >
+                {{ option.label }} ({{ count(option.value) }})
+            </button>
+        }
+    </div>
+    <div class="selection-actions">
+        <button mat-button type="button" [disabled]="busy()" (click)="selectAll.emit()">
+            Select all ready
+        </button>
+        <button mat-button type="button" [disabled]="busy()" (click)="selectNone.emit()">
+            Select none
+        </button>
+    </div>
+</div>
+
+<ul class="review-list" aria-label="CSV rows">
+    @for (row of visibleRows(); track row.source.row) {
+        <li class="review-row" [class]="'status-' + row.status">
+            <div class="row-main">
+                <mat-checkbox
+                    class="row-select"
+                    [checked]="row.selected"
+                    [disabled]="busy() || row.status !== 'ready'"
+                    [aria-label]="'Import row ' + row.source.row + ': ' + title(row)"
+                    (change)="rowToggle.emit({ row: row.source.row, selected: $event.checked })"
+                ></mat-checkbox>
+                <span class="row-number">Row {{ row.source.row }}</span>
+                <div class="row-text">
+                    <span class="row-title">{{ title(row) }}</span>
+                    <span class="row-meta">
+                        {{ typeLabel(row.item?.itemType ?? row.source.itemType) }}
+                        @if (identifier(row); as id) {
+                            · {{ id }}
+                        }
+                    </span>
+                </div>
+                <span class="status-badge">{{ statusLabels[row.status] }}</span>
+                @if (hasDetails(row)) {
+                    <button
+                        mat-button
+                        type="button"
+                        class="details-toggle"
+                        [attr.aria-expanded]="isExpanded(row)"
+                        [attr.aria-controls]="'csv-row-details-' + row.source.row"
+                        (click)="toggleDetails(row)"
+                    >
+                        {{ detailsLabel(row) }}
+                        <mat-icon iconPositionEnd aria-hidden="true">{{
+                            isExpanded(row) ? 'expand_less' : 'expand_more'
+                        }}</mat-icon>
+                    </button>
+                }
+            </div>
+            @if (summary(row); as text) {
+                <p class="row-summary">{{ text }}</p>
+            }
+
+            @if (isExpanded(row)) {
+                <div
+                    class="row-details"
+                    role="region"
+                    [id]="'csv-row-details-' + row.source.row"
+                    [attr.aria-label]="'Details for row ' + row.source.row"
+                >
+                    @if (row.status === 'duplicate') {
+                        <div class="comparison">
+                            @for (entry of comparison(row); track entry.label + entry.itemId) {
+                                <dl class="compared-item">
+                                    <dt class="compared-label">{{ entry.label }}</dt>
+                                    <dd>
+                                        <strong>{{ entry.title }}</strong>
+                                        <span>{{ entry.creator || 'No creator' }}</span>
+                                        <span>
+                                            {{ entry.itemType }}
+                                            @if (entry.releaseYear) {
+                                                · {{ entry.releaseYear }}
+                                            }
+                                        </span>
+                                        @if (entry.isbn13) {
+                                            <span>ISBN-13 {{ entry.isbn13 }}</span>
+                                        }
+                                        @if (entry.isbn10) {
+                                            <span>ISBN-10 {{ entry.isbn10 }}</span>
+                                        }
+                                        @if (entry.itemId) {
+                                            <a
+                                                class="open-existing"
+                                                [routerLink]="['/items', entry.itemId, 'edit']"
+                                                target="_blank"
+                                                rel="noopener"
+                                            >
+                                                Open existing
+                                                <mat-icon aria-hidden="true">open_in_new</mat-icon>
+                                                <span class="cdk-visually-hidden">
+                                                    (opens in a new tab)</span
+                                                >
+                                            </a>
+                                        }
+                                    </dd>
+                                </dl>
+                            }
+                        </div>
+                        <p class="detail-note">
+                            Duplicates are skipped. Open the existing item, or check the earlier row
+                            shown above. If this row's details in your CSV are wrong, correct them
+                            and preview the file again.
+                        </p>
+                    }
+
+                    @if (row.source.candidates?.length) {
+                        <mat-radio-group
+                            class="candidates"
+                            [value]="row.choice"
+                            [disabled]="busy()"
+                            [attr.aria-label]="'Catalog editions for row ' + row.source.row"
+                            (change)="handleRadioChange(row, $event.value)"
+                        >
+                            @for (
+                                candidate of row.source.candidates;
+                                track $index;
+                                let index = $index
+                            ) {
+                                <mat-radio-button class="candidate" [value]="index">
+                                    <span class="candidate-title">{{ candidate.item.title }}</span>
+                                    <span class="candidate-meta">
+                                        {{ candidate.item.creator || 'Unknown author' }}
+                                        @if (candidate.item.releaseYear) {
+                                            · {{ candidate.item.releaseYear }}
+                                        }
+                                        @if (candidate.item.pageCount) {
+                                            · {{ candidate.item.pageCount }} pages
+                                        }
+                                    </span>
+                                    <span class="candidate-meta">
+                                        @if (candidate.item.isbn13) {
+                                            ISBN-13 {{ candidate.item.isbn13 }}
+                                        }
+                                        @if (candidate.item.isbn10) {
+                                            · ISBN-10 {{ candidate.item.isbn10 }}
+                                        }
+                                    </span>
+                                    @if (candidateNote(row, index); as note) {
+                                        <span class="candidate-note">{{ note }}</span>
+                                    }
+                                </mat-radio-button>
+                            }
+                        </mat-radio-group>
+                        @if (row.choice !== null) {
+                            <button
+                                mat-button
+                                type="button"
+                                [disabled]="busy()"
+                                (click)="choose.emit({ row: row.source.row, index: null })"
+                            >
+                                Clear choice
+                            </button>
+                        }
+                    }
+                </div>
+            }
+        </li>
+    } @empty {
+        <li class="empty">No rows match this filter.</li>
+    }
+</ul>
