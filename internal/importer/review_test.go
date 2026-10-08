@@ -82,7 +82,7 @@ func newLibraryStore(t *testing.T, seed ...items.CreateItemInput) *libraryStore 
 	repo := &faultRepo{InMemoryRepository: items.NewInMemoryRepository(nil)}
 	store := &libraryStore{Service: items.NewService(repo), repo: repo, creates: &repo.creates}
 	for _, input := range seed {
-		if _, err := store.Service.Create(context.Background(), input); err != nil {
+		if _, err := store.Create(context.Background(), input); err != nil {
 			t.Fatalf("seed %q: %v", input.Title, err)
 		}
 	}
@@ -92,7 +92,7 @@ func newLibraryStore(t *testing.T, seed ...items.CreateItemInput) *libraryStore 
 
 func (s *libraryStore) owned(t *testing.T, ownerID uuid.UUID) []items.Item {
 	t.Helper()
-	list, err := s.Service.List(context.Background(), items.ListOptions{OwnerID: ownerID})
+	list, err := s.List(context.Background(), items.ListOptions{OwnerID: ownerID})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -388,10 +388,10 @@ func reviewedRows(t *testing.T, preview Preview, choices map[int]int) CommitRequ
 	t.Helper()
 	request := CommitRequest{}
 	for _, row := range preview.Rows {
-		switch {
-		case row.Status == RowReady:
+		switch row.Status {
+		case RowReady:
 			request.Rows = append(request.Rows, ReviewedRow{Row: row.Row, Item: *row.Item})
-		case row.Status == RowNeedsMatch:
+		case RowNeedsMatch:
 			if choice, ok := choices[row.Row]; ok {
 				request.Rows = append(request.Rows, ReviewedRow{Row: row.Row, Item: row.Candidates[choice].Item})
 			}
@@ -490,7 +490,7 @@ func TestCommitRechecksDuplicatesAgainstLibraryAndSavedRows(t *testing.T) {
 	}
 	// Another tab saves a matching item after the preview, and a tampered
 	// request repeats an ISBN under a new row number.
-	if _, err := store.Service.Create(context.Background(), items.CreateItemInput{OwnerID: testOwnerID, Title: "added since preview", ItemType: items.ItemTypeBook}); err != nil {
+	if _, err := store.Create(context.Background(), items.CreateItemInput{OwnerID: testOwnerID, Title: "added since preview", ItemType: items.ItemTypeBook}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	repeat := request.Rows[2]
