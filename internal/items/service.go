@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"slices"
 	"strings"
@@ -50,15 +51,7 @@ func (s *Service) Create(ctx context.Context, input CreateItemInput) (Item, erro
 		return Item{}, err
 	}
 	item.ID = uuid.New()
-
-	item.CreatedAt = time.Now().UTC()
-	if input.CreatedAt != nil && !input.CreatedAt.IsZero() {
-		item.CreatedAt = input.CreatedAt.UTC()
-	}
-	item.UpdatedAt = item.CreatedAt
-	if input.UpdatedAt != nil && !input.UpdatedAt.IsZero() {
-		item.UpdatedAt = input.UpdatedAt.UTC()
-	}
+	stampNewItem(&item, input)
 
 	return s.repo.Create(ctx, item)
 }
@@ -609,6 +602,9 @@ func normalizeItem(item *Item, checkCover bool) error {
 	currentPage, err := normalizeCurrentPage(item.CurrentPage)
 	if err != nil {
 		return err
+	}
+	if price := item.RetailPriceUsd; price != nil && (math.IsNaN(*price) || math.IsInf(*price, 0)) {
+		return validationErr("retailPriceUsd must be a finite number")
 	}
 	if checkCover {
 		if item.CoverImage, err = sanitizeCoverImage(item.CoverImage); err != nil {

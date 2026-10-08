@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -615,8 +616,8 @@ func parseOptionalFloat(value string, field string) (*float64, error) {
 		return nil, nil
 	}
 	parsed, err := strconv.ParseFloat(cleaned, 64)
-	if err != nil {
-		return nil, fmt.Errorf("%s must be a number", field)
+	if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+		return nil, fmt.Errorf("%s must be a finite number", field)
 	}
 	return &parsed, nil
 }

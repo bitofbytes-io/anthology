@@ -5,8 +5,9 @@
     <p class="result-total">
         {{ outcome().rows.length }} row{{ outcome().rows.length === 1 ? '' : 's' }} in the file.
         @if (stoppedEarly()) {
-            The import ran out of time before every selected row was saved. Rows already added stay
-            in your library; preview the file again to import the rest.
+            The import stopped before every selected row was handled; each row below says why. Rows
+            already added stay in your library; preview the file again to check what was saved and
+            import the rest.
         }
     </p>
 

@@ -36,10 +36,12 @@ const (
 	OutcomeAdded   OutcomeStatus = "added"
 	OutcomeSkipped OutcomeStatus = "skipped"
 	OutcomeFailed  OutcomeStatus = "failed"
-	// OutcomeInterrupted marks the row whose save was cut short when the
-	// request ended; it may or may not have been saved.
+	// OutcomeInterrupted marks a row whose save could not be confirmed (the
+	// request ended or the connection failed mid-save); it may or may not
+	// have been saved.
 	OutcomeInterrupted OutcomeStatus = "interrupted"
-	// OutcomeUnprocessed marks rows never attempted because the request ended.
+	// OutcomeUnprocessed marks rows never attempted, because the request
+	// ended or an earlier row's save could not be confirmed.
 	OutcomeUnprocessed OutcomeStatus = "unprocessed"
 )
 
@@ -83,56 +85,108 @@ func (r *CommitResult) add(outcome RowOutcome) {
 }
 
 const (
-	msgCommitInterrupted = "The import stopped while saving this row, so it may or may not have been saved. Preview the file again to check: saved rows show as duplicates."
-	msgCommitUnprocessed = "Not attempted because the import ran out of time. Preview the file again to import the remaining rows."
-	msgCommitSaveFailed  = "This row could not be saved."
+	msgCommitInterrupted  = "We couldn't confirm whether this row was saved, so it may or may not be in your library. Preview the file again to check: saved rows show as duplicates."
+	msgCommitUnprocessed  = "Not attempted because the import ran out of time. Preview the file again to import the remaining rows."
+	msgCommitAfterUnknown = "Not attempted because the previous row's save couldn't be confirmed. Preview the file again to import the remaining rows."
+	msgCommitLockTimeout  = "Not attempted because another import or save for your library was still running when this request ran out of time. Preview the file again to import these rows."
+	msgCommitSaveFailed   = "This row could not be saved."
 )
+
+// ErrReviewedImportUnavailable reports an item store that cannot save
+// reviewed rows with an atomic duplicate check, so commits are refused rather
+// than run with an unsafe check.
+var ErrReviewedImportUnavailable = errors.New("reviewed CSV import is not available")
+
+// batchStore starts an import batch: while it is open, no other item insert
+// for the owner can happen, in this process or any other sharing the store.
+type batchStore interface {
+	BeginImportBatch(ctx context.Context, ownerID uuid.UUID) (*items.ImportBatch, error)
+}
 
 // Commit saves reviewed rows in row order. It never looks anything up in the
 // catalog: each row is saved with exactly the item it carries, after the same
-// validation items.Service.Create applies, owned by ownerID. Duplicates are
-// rechecked against the owner's library as it is now and against rows saved
-// earlier in this request, and are skipped.
+// validation items.Service.Create applies, owned by ownerID.
 //
-// The check reads the library once, so it cannot see items another request
-// saves concurrently, and the item store has no unique constraint to fall back
-// on; repeating a commit is safe only because the repeat skips rows the first
-// one saved.
+// Rows are saved inside an import batch, which waits for and then holds the
+// owner's exclusive insert right (a PostgreSQL advisory lock shared by every
+// API replica). Duplicates are checked against the library read once the
+// batch holds that right, and against rows saved earlier in the request, so
+// overlapping commits for the same owner cannot both save a row: the later
+// one waits, then skips what the earlier one saved. Each row is still saved
+// on its own, so rows saved before a later failure stay saved.
+//
+// When a row's save cannot be confirmed either way, it is reported as
+// interrupted and no further rows are attempted.
 func (i *CSVImporter) Commit(ctx context.Context, request CommitRequest, ownerID uuid.UUID) (CommitResult, error) {
 	if i.items == nil {
 		return CommitResult{}, fmt.Errorf("%w: item store is not configured", ErrInvalidCommit)
+	}
+	store, ok := i.items.(batchStore)
+	if !ok {
+		return CommitResult{}, ErrReviewedImportUnavailable
 	}
 	rows, err := validateCommitRows(request.Rows)
 	if err != nil {
 		return CommitResult{}, err
 	}
 
-	existing, err := i.items.List(ctx, items.ListOptions{OwnerID: ownerID})
+	result := CommitResult{Rows: make([]RowOutcome, 0, len(rows))}
+	batch, err := store.BeginImportBatch(ctx, ownerID)
 	if err != nil {
+		if errors.Is(err, items.ErrExclusiveInsertsUnsupported) {
+			return CommitResult{}, ErrReviewedImportUnavailable
+		}
+		if ctx.Err() != nil {
+			// Still waiting for the owner's insert right: nothing was saved.
+			result.addUnprocessed(rows, msgCommitLockTimeout)
+			return result, nil
+		}
+		return CommitResult{}, err
+	}
+	defer batch.Close()
+
+	existing, err := batch.Existing(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			result.addUnprocessed(rows, msgCommitUnprocessed)
+			return result, nil
+		}
 		return CommitResult{}, err
 	}
 	tracker := newDuplicateTracker(existing)
 
-	result := CommitResult{Rows: make([]RowOutcome, 0, len(rows))}
 	for idx, row := range rows {
 		if ctx.Err() != nil {
-			for _, rest := range rows[idx:] {
-				result.add(RowOutcome{
-					Row:        rest.Row,
-					Status:     OutcomeUnprocessed,
-					Title:      rest.Item.Title,
-					Identifier: firstIdentifier(rest.Item.CreateItemInput),
-					Message:    msgCommitUnprocessed,
-				})
-			}
+			result.addUnprocessed(rows[idx:], msgCommitUnprocessed)
 			break
 		}
-		result.add(i.commitRow(ctx, tracker, row, ownerID))
+		outcome := commitRow(ctx, batch, tracker, row, ownerID)
+		result.add(outcome)
+		if outcome.Status == OutcomeInterrupted {
+			message := msgCommitAfterUnknown
+			if ctx.Err() != nil {
+				message = msgCommitUnprocessed
+			}
+			result.addUnprocessed(rows[idx+1:], message)
+			break
+		}
 	}
 	return result, nil
 }
 
-func (i *CSVImporter) commitRow(ctx context.Context, tracker *duplicateTracker, row ReviewedRow, ownerID uuid.UUID) RowOutcome {
+func (r *CommitResult) addUnprocessed(rows []ReviewedRow, message string) {
+	for _, row := range rows {
+		r.add(RowOutcome{
+			Row:        row.Row,
+			Status:     OutcomeUnprocessed,
+			Title:      row.Item.Title,
+			Identifier: firstIdentifier(row.Item.CreateItemInput),
+			Message:    message,
+		})
+	}
+}
+
+func commitRow(ctx context.Context, batch *items.ImportBatch, tracker *duplicateTracker, row ReviewedRow, ownerID uuid.UUID) RowOutcome {
 	outcome := RowOutcome{
 		Row:        row.Row,
 		Title:      row.Item.Title,
@@ -158,16 +212,17 @@ func (i *CSVImporter) commitRow(ctx context.Context, tracker *duplicateTracker, 
 		return outcome
 	}
 
-	item, err := i.items.Create(ctx, input)
+	item, err := batch.Create(ctx, input)
 	if err != nil {
 		switch {
-		case ctx.Err() != nil:
+		case errors.Is(err, items.ErrSaveOutcomeUnknown) || ctx.Err() != nil:
 			outcome.Status = OutcomeInterrupted
 			outcome.Message = msgCommitInterrupted
 		case errors.Is(err, items.ErrValidation):
 			outcome.Status = OutcomeFailed
 			outcome.Message = err.Error()
 		default:
+			// The store confirmed nothing was saved.
 			outcome.Status = OutcomeFailed
 			outcome.Message = msgCommitSaveFailed
 		}

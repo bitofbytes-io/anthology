@@ -65,6 +65,43 @@ func TestItemHandlerPreviewCSVImportWritesNothing(t *testing.T) {
 	}
 }
 
+func TestItemHandlerPreviewCSVImportReportsNonFinitePricesPerRow(t *testing.T) {
+	handler, service := newReviewHandler(t, nil)
+	csv := strings.Join([]string{
+		"title,creator,itemType,releaseYear,pageCount,isbn13,isbn10,description,coverImage,notes,retailPriceUsd",
+		"Valid,,book,,,,,,,,12.34",
+		"Not a number,,book,,,,,,,,NaN",
+		"Plus infinity,,book,,,,,,,,+Inf",
+		"Minus infinity,,book,,,,,,,,-Inf",
+		"Spelled out,,book,,,,,,,,Infinity",
+	}, "\n")
+	rec := httptest.NewRecorder()
+
+	handler.PreviewCSVImport(rec, reqWithUser(newMultipartCSVRequest(t, csv)))
+
+	if rec.Code != http.StatusOK || !json.Valid(rec.Body.Bytes()) {
+		t.Fatalf("expected a valid JSON preview, got %d %q", rec.Code, rec.Body.String())
+	}
+	var preview importer.Preview
+	if err := json.Unmarshal(rec.Body.Bytes(), &preview); err != nil {
+		t.Fatalf("decode preview: %v", err)
+	}
+	if preview.Ready != 1 || preview.NeedsMatch != 4 || preview.Rows[0].Status != importer.RowReady {
+		t.Fatalf("unexpected preview: %+v", preview)
+	}
+	if price := preview.Rows[0].Item.RetailPriceUsd; price == nil || *price != 12.34 {
+		t.Fatalf("valid row lost its price: %+v", preview.Rows[0].Item)
+	}
+	for _, row := range preview.Rows[1:] {
+		if row.Status != importer.RowNeedsMatch || row.Problem != "retailPriceUsd must be a finite number" || row.Item != nil {
+			t.Fatalf("row %d: got %s %q", row.Row, row.Status, row.Problem)
+		}
+	}
+	if got := len(ownedItems(t, service)); got != 0 {
+		t.Fatalf("preview saved %d items", got)
+	}
+}
+
 func TestItemHandlerPreviewCSVImportRejectsInvalidFiles(t *testing.T) {
 	handler, _ := newReviewHandler(t, nil)
 	rec := httptest.NewRecorder()
@@ -156,6 +193,20 @@ func TestItemHandlerCommitCSVImportUnavailable(t *testing.T) {
 	handler.PreviewCSVImport(rec, reqWithUser(newMultipartCSVRequest(t, "title\nA\n")))
 	if rec.Code != http.StatusNotImplemented {
 		t.Fatalf("expected status 501, got %d", rec.Code)
+	}
+}
+
+func TestItemHandlerCommitCSVImportRefusesUnsafeStore(t *testing.T) {
+	// The plain Repository interface hides the in-memory exclusive inserts.
+	service := items.NewService(struct{ items.Repository }{items.NewInMemoryRepository(nil)})
+	handler := NewItemHandler(service, nil, importer.NewCSVImporter(service, nil), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	rec := httptest.NewRecorder()
+	handler.CommitCSVImport(rec, commitRequest(`{"rows":[{"row":2,"item":{"title":"A","itemType":"book"}}]}`))
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("expected status 501, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := len(ownedItems(t, service)); got != 0 {
+		t.Fatalf("refused commit saved %d items", got)
 	}
 }
 

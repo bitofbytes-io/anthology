@@ -22,38 +22,72 @@ var otherOwnerID = uuid.MustParse("00000000-0000-0000-0000-000000000002")
 
 const reviewHeader = "title,creator,itemType,releaseYear,pageCount,isbn13,isbn10,description,coverImage,notes,genre,readingStatus\n"
 
-// libraryStore is a real items.Service over the in-memory repository that
-// counts Create calls and can fail or cancel a chosen call.
+// faultRepo wraps the in-memory repository at the persistence boundary: it
+// counts every insert (plain creates and import batch inserts) and lets tests
+// pause after a batch reads the library or replace a batch insert's result.
+type faultRepo struct {
+	*items.InMemoryRepository
+	creates atomic.Int32
+	// onList runs after an import batch reads the library.
+	onList func()
+	// fault, when set, decides the result of each batch insert; insert
+	// performs the real insert.
+	fault func(ctx context.Context, call int32, insert func() (items.Item, error)) (items.Item, error)
+}
+
+func (r *faultRepo) Create(ctx context.Context, item items.Item) (items.Item, error) {
+	r.creates.Add(1)
+	return r.InMemoryRepository.Create(ctx, item)
+}
+
+func (r *faultRepo) BeginExclusiveInserts(ctx context.Context, ownerID uuid.UUID) (items.InsertSession, error) {
+	session, err := r.InMemoryRepository.BeginExclusiveInserts(ctx, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	return &faultSession{InsertSession: session, repo: r}, nil
+}
+
+type faultSession struct {
+	items.InsertSession
+	repo *faultRepo
+}
+
+func (s *faultSession) List(ctx context.Context) ([]items.Item, error) {
+	list, err := s.InsertSession.List(ctx)
+	if s.repo.onList != nil {
+		s.repo.onList()
+	}
+	return list, err
+}
+
+func (s *faultSession) Insert(ctx context.Context, item items.Item) (items.Item, error) {
+	call := s.repo.creates.Add(1)
+	insert := func() (items.Item, error) { return s.InsertSession.Insert(ctx, item) }
+	if s.repo.fault != nil {
+		return s.repo.fault(ctx, call, insert)
+	}
+	return insert()
+}
+
+// libraryStore is a real items.Service over a faultRepo.
 type libraryStore struct {
 	*items.Service
-	creates atomic.Int32
-	failOn  map[int32]error
-	cancel  context.CancelFunc
-	// cancelOn cancels the request context during that Create call.
-	cancelOn int32
+	repo    *faultRepo
+	creates *atomic.Int32
 }
 
 func newLibraryStore(t *testing.T, seed ...items.CreateItemInput) *libraryStore {
 	t.Helper()
-	store := &libraryStore{Service: items.NewService(items.NewInMemoryRepository(nil))}
+	repo := &faultRepo{InMemoryRepository: items.NewInMemoryRepository(nil)}
+	store := &libraryStore{Service: items.NewService(repo), repo: repo, creates: &repo.creates}
 	for _, input := range seed {
 		if _, err := store.Service.Create(context.Background(), input); err != nil {
 			t.Fatalf("seed %q: %v", input.Title, err)
 		}
 	}
+	repo.creates.Store(0)
 	return store
-}
-
-func (s *libraryStore) Create(ctx context.Context, input items.CreateItemInput) (items.Item, error) {
-	call := s.creates.Add(1)
-	if s.cancelOn != 0 && call == s.cancelOn {
-		s.cancel()
-		return items.Item{}, fmt.Errorf("insert item: %w", context.Canceled)
-	}
-	if err := s.failOn[call]; err != nil {
-		return items.Item{}, err
-	}
-	return s.Service.Create(ctx, input)
 }
 
 func (s *libraryStore) owned(t *testing.T, ownerID uuid.UUID) []items.Item {
@@ -506,9 +540,17 @@ func TestCommitReportsPartialSuccessDistinctly(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	store := newLibraryStore(t)
-	store.failOn = map[int32]error{2: errors.New("pq: connection reset by peer at 10.0.0.5")}
-	store.cancel = cancel
-	store.cancelOn = 4
+	store.repo.fault = func(ctx context.Context, call int32, insert func() (items.Item, error)) (items.Item, error) {
+		switch call {
+		case 2:
+			// The repository confirms nothing was stored.
+			return items.Item{}, errors.New("insert item: pq: value too long for type at 10.0.0.5")
+		case 4:
+			cancel()
+			return items.Item{}, fmt.Errorf("insert item: %w: %w", items.ErrSaveOutcomeUnknown, context.Canceled)
+		}
+		return insert()
+	}
 	importer := NewCSVImporter(store, nil)
 
 	request := CommitRequest{}

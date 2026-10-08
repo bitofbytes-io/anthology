@@ -121,8 +121,14 @@ describe('CsvImportResultComponent', () => {
             '1 Added',
             '0 Skipped',
             '1 Failed',
-            '1 Stopped while saving',
+            '1 Save not confirmed',
             '1 Not imported',
         ]);
+        expect(fixture.nativeElement.querySelector('.result-total').textContent).toContain(
+            'The import stopped before every selected row was handled; each row below says why.',
+        );
+        expect(fixture.nativeElement.querySelector('.result-total').textContent).not.toContain(
+            'ran out of time',
+        );
     });
 });

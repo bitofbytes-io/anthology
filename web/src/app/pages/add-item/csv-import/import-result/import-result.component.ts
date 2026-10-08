@@ -9,7 +9,7 @@ const STATUS_LABELS: Record<OutcomeStatus, string> = {
     added: 'Added',
     skipped: 'Skipped',
     failed: 'Failed',
-    interrupted: 'Stopped while saving',
+    interrupted: 'Save not confirmed',
     unprocessed: 'Not imported',
     unknown: 'Unknown',
 };
@@ -49,7 +49,10 @@ export class CsvImportResultComponent {
         () => this.outcome().rows.filter((row) => row.sent && row.status === 'skipped').length,
     );
 
-    /** True when the request ran out of time before every selected row was handled. */
+    /**
+     * True when the import stopped before every selected row was handled: it
+     * ran out of time, or a row's save could not be confirmed.
+     */
     readonly stoppedEarly = computed(() =>
         this.outcome().rows.some(
             (row) => row.sent && (row.status === 'interrupted' || row.status === 'unprocessed'),

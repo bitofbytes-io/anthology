@@ -100,16 +100,35 @@ func (row itemRow) toItem() Item {
 	return item
 }
 
-// Create inserts a new row and returns the stored representation.
+// Create inserts a new row and returns the stored representation. It takes
+// the owner's insert lock for its transaction, so it waits while an insert
+// session (see BeginExclusiveInserts) holds the lock in any process. The
+// stored row comes back from the INSERT itself; an error wraps
+// ErrSaveOutcomeUnknown when the row may have been stored anyway.
 func (r *PostgresRepository) Create(ctx context.Context, item Item) (Item, error) {
-	insert := `INSERT INTO items (id, owner_id, title, creator, item_type, release_year, page_count, current_page, isbn_13, isbn_10, description, cover_image, format, genre, rating, retail_price_usd, google_volume_id, platform, age_group, player_count, reading_status, read_at, notes, series_name, volume_number, total_volumes, created_at, updated_at)
-VALUES (:id, :owner_id, :title, :creator, :item_type, :release_year, :page_count, :current_page, :isbn_13, :isbn_10, :description, :cover_image, :format, :genre, :rating, :retail_price_usd, :google_volume_id, :platform, :age_group, :player_count, :reading_status, :read_at, :notes, :series_name, :volume_number, :total_volumes, :created_at, :updated_at)`
-
-	if _, err := r.db.NamedExecContext(ctx, insert, item); err != nil {
-		return Item{}, fmt.Errorf("insert item: %w", err)
+	query, args, err := r.db.BindNamed(insertItemSQL, item)
+	if err != nil {
+		return Item{}, fmt.Errorf("bind item insert: %w", err)
 	}
 
-	return r.Get(ctx, item.ID, item.OwnerID)
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return Item{}, fmt.Errorf("begin item insert: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, lockOwnerInsertsSQL, itemInsertLockClass, ownerLockKey(item.OwnerID)); err != nil {
+		return Item{}, fmt.Errorf("lock owner inserts: %w", err)
+	}
+	var stored Item
+	if err := tx.QueryRowxContext(ctx, query, args...).StructScan(&stored); err != nil {
+		// Nothing is committed until Commit, so a failure here stores nothing.
+		return Item{}, fmt.Errorf("insert item: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Item{}, saveOutcomeErr(ctx, "commit item insert", err)
+	}
+	return stored, nil
 }
 
 // Get retrieves a row by primary key and owner.

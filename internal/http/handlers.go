@@ -426,6 +426,10 @@ func (h *ItemHandler) CommitCSVImport(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		if errors.Is(err, importer.ErrReviewedImportUnavailable) {
+			writeError(w, http.StatusNotImplemented, "CSV import is not available")
+			return
+		}
 		h.logger.Error("csv import commit failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "import failed before any rows were saved")
 		return
