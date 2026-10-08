@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"sync"
 	"time"
 
@@ -24,11 +25,42 @@ RETURNING id, owner_id, title, creator, item_type, release_year, page_count, cur
 const itemInsertLockClass int32 = 0x616e7468
 
 const (
-	lockOwnerInsertsSQL       = `SELECT pg_advisory_xact_lock($1, $2)`
-	lockOwnerInsertsUntilSQL  = `SELECT pg_advisory_lock($1, $2)`
-	unlockOwnerInsertsSQL     = `SELECT pg_advisory_unlock($1, $2)`
-	insertSessionCloseTimeout = 5 * time.Second
+	tryLockOwnerInsertsSQL      = `SELECT pg_try_advisory_xact_lock($1, $2)`
+	tryLockOwnerInsertsUntilSQL = `SELECT pg_try_advisory_lock($1, $2)`
+	unlockOwnerInsertsSQL       = `SELECT pg_advisory_unlock($1, $2)`
+	insertSessionCloseTimeout   = 5 * time.Second
 )
+
+// Bounds of the randomized back-off between attempts to take a busy owner's
+// insert lock.
+const (
+	ownerLockRetryMin = 10 * time.Millisecond
+	ownerLockRetryMax = 250 * time.Millisecond
+)
+
+// waitForOwnerLock repeats attempt until it reports the owner's insert lock
+// acquired or fails, backing off between attempts until ctx ends. An attempt
+// that finds the lock busy must already have returned its connection to the
+// pool, so a waiting request does not keep a pooled connection while it
+// waits.
+func waitForOwnerLock[T any](ctx context.Context, attempt func() (T, bool, error)) (T, error) {
+	delay := ownerLockRetryMin
+	for {
+		result, acquired, err := attempt()
+		if err != nil || acquired {
+			return result, err
+		}
+		timer := time.NewTimer(delay/2 + rand.N(delay/2+1))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			var zero T
+			return zero, fmt.Errorf("wait for owner insert lock: %w", ctx.Err())
+		case <-timer.C:
+		}
+		delay = min(delay*2, ownerLockRetryMax)
+	}
+}
 
 // ownerLockKey derives the second advisory lock key from the owner ID. Two
 // owners may share a key; that only makes their inserts wait for each other.
@@ -56,19 +88,78 @@ func saveOutcomeErr(ctx context.Context, action string, err error) error {
 // BeginExclusiveInserts pins a connection and takes the owner's insert lock
 // at session level, so every other insert for the owner, from any process
 // using this database, waits until Close. Each Insert is its own autocommitted
-// statement, so rows saved before a later failure stay saved.
+// statement, so rows saved before a later failure stay saved. While another
+// holder has the lock, it retries with back-off, returning its connection to
+// the pool between attempts.
 func (r *PostgresRepository) BeginExclusiveInserts(ctx context.Context, ownerID uuid.UUID) (InsertSession, error) {
+	return waitForOwnerLock(ctx, func() (InsertSession, bool, error) {
+		conn, err := r.db.Connx(ctx)
+		if err != nil {
+			return nil, false, fmt.Errorf("open insert session: %w", err)
+		}
+		var acquired bool
+		if err := conn.GetContext(ctx, &acquired, tryLockOwnerInsertsUntilSQL, itemInsertLockClass, ownerLockKey(ownerID)); err != nil {
+			// The lock may have been granted just before the failure, so end
+			// the database session rather than return a connection that could
+			// hold it.
+			discardConn(conn)
+			return nil, false, fmt.Errorf("lock owner inserts: %w", err)
+		}
+		if !acquired {
+			_ = conn.Close() // holds no lock, so it can go back to the pool
+			return nil, false, nil
+		}
+		return &postgresInsertSession{repo: r, conn: conn, ownerID: ownerID}, true, nil
+	})
+}
+
+// tryCreate makes one attempt to insert item under the owner's insert lock,
+// in a transaction on its own connection. It reports acquired false, with
+// the connection back in the pool, when another holder has the lock.
+func (r *PostgresRepository) tryCreate(ctx context.Context, ownerID uuid.UUID, query string, args []any) (Item, bool, error) {
 	conn, err := r.db.Connx(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("open insert session: %w", err)
+		return Item{}, false, fmt.Errorf("begin item insert: %w", err)
 	}
-	if _, err := conn.ExecContext(ctx, lockOwnerInsertsUntilSQL, itemInsertLockClass, ownerLockKey(ownerID)); err != nil {
-		// The lock may have been granted just before the failure, so end the
-		// database session rather than return a connection that could hold it.
+	tx, err := conn.BeginTxx(ctx, nil)
+	if err != nil {
 		discardConn(conn)
-		return nil, fmt.Errorf("lock owner inserts: %w", err)
+		return Item{}, false, fmt.Errorf("begin item insert: %w", err)
 	}
-	return &postgresInsertSession{repo: r, conn: conn, ownerID: ownerID}, nil
+	// finish ends the transaction and returns the connection to the pool, or
+	// closes it if the rollback fails.
+	finish := func() {
+		if err := tx.Rollback(); err != nil {
+			discardConn(conn)
+			return
+		}
+		_ = conn.Close()
+	}
+
+	var acquired bool
+	if err := tx.GetContext(ctx, &acquired, tryLockOwnerInsertsSQL, itemInsertLockClass, ownerLockKey(ownerID)); err != nil {
+		// Ending the session releases a lock that may have been granted.
+		_ = tx.Rollback()
+		discardConn(conn)
+		return Item{}, false, fmt.Errorf("lock owner inserts: %w", err)
+	}
+	if !acquired {
+		finish()
+		return Item{}, false, nil
+	}
+
+	var stored Item
+	if err := tx.QueryRowxContext(ctx, query, args...).StructScan(&stored); err != nil {
+		// Nothing is committed until Commit, so a failure here stores nothing.
+		finish()
+		return Item{}, true, fmt.Errorf("insert item: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		discardConn(conn)
+		return Item{}, true, saveOutcomeErr(ctx, "commit item insert", err)
+	}
+	_ = conn.Close()
+	return stored, true, nil
 }
 
 type postgresInsertSession struct {

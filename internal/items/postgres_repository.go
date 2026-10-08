@@ -102,33 +102,18 @@ func (row itemRow) toItem() Item {
 
 // Create inserts a new row and returns the stored representation. It takes
 // the owner's insert lock for its transaction, so it waits while an insert
-// session (see BeginExclusiveInserts) holds the lock in any process. The
-// stored row comes back from the INSERT itself; an error wraps
-// ErrSaveOutcomeUnknown when the row may have been stored anyway.
+// session (see BeginExclusiveInserts) holds the lock in any process; it does
+// not keep a pooled connection while waiting. The stored row comes back from
+// the INSERT itself; an error wraps ErrSaveOutcomeUnknown when the row may
+// have been stored anyway.
 func (r *PostgresRepository) Create(ctx context.Context, item Item) (Item, error) {
 	query, args, err := r.db.BindNamed(insertItemSQL, item)
 	if err != nil {
 		return Item{}, fmt.Errorf("bind item insert: %w", err)
 	}
-
-	tx, err := r.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return Item{}, fmt.Errorf("begin item insert: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	if _, err := tx.ExecContext(ctx, lockOwnerInsertsSQL, itemInsertLockClass, ownerLockKey(item.OwnerID)); err != nil {
-		return Item{}, fmt.Errorf("lock owner inserts: %w", err)
-	}
-	var stored Item
-	if err := tx.QueryRowxContext(ctx, query, args...).StructScan(&stored); err != nil {
-		// Nothing is committed until Commit, so a failure here stores nothing.
-		return Item{}, fmt.Errorf("insert item: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return Item{}, saveOutcomeErr(ctx, "commit item insert", err)
-	}
-	return stored, nil
+	return waitForOwnerLock(ctx, func() (Item, bool, error) {
+		return r.tryCreate(ctx, item.OwnerID, query, args)
+	})
 }
 
 // Get retrieves a row by primary key and owner.
