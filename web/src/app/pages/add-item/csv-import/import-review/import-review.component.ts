@@ -8,6 +8,7 @@ import { RouterModule } from '@angular/router';
 import { ITEM_TYPE_LABELS, ItemType } from '../../../../models/item-types';
 import { CsvReviewedItem, CsvRowStatus } from '../../../../models/import';
 import { ReviewRow, duplicateReason } from '../csv-import-review';
+import { ReviewedField, reviewedItemFields } from './reviewed-item-fields';
 
 export interface RowToggle {
     row: number;
@@ -103,9 +104,21 @@ export class CsvImportReviewComponent {
         });
     }
 
-    /** Duplicates can be compared and editions chosen; other problems are explained inline. */
+    /**
+     * Ready rows show what will be saved, duplicates can be compared, and
+     * editions chosen; other problems are explained inline.
+     */
     hasDetails(row: ReviewRow): boolean {
-        return row.status === 'duplicate' || !!row.source.candidates?.length;
+        return (
+            row.status === 'duplicate' ||
+            (row.status === 'ready' && !!row.item) ||
+            !!row.source.candidates?.length
+        );
+    }
+
+    /** The exact reviewed item fields that importing the row saves. */
+    savedFields(item: CsvReviewedItem): ReviewedField[] {
+        return reviewedItemFields(item);
     }
 
     detailsLabel(row: ReviewRow): string {

@@ -20,6 +20,7 @@ import { Subscription, finalize } from 'rxjs';
 
 import { CsvImportPreview } from '../../../models/import';
 import { ItemService } from '../../../services/item.service';
+import { NotificationService } from '../../../services/notification.service';
 import {
     ImportOutcome,
     ReviewRow,
@@ -55,6 +56,8 @@ const CSV_FIELDS = [
     'playerCount',
 ];
 const DEFAULT_PREVIEW_ERROR = 'We could not check this file. Confirm the CSV matches the template.';
+const SIGNED_OUT_WHILE_SAVING =
+    'You were signed out while your CSV import was saving, so some rows may have been saved. After you sign in, preview the file again: saved rows show as possible duplicates.';
 
 /**
  * - upload: choose a file and preview it (read-only).
@@ -87,6 +90,7 @@ export type CsvImportStage = 'upload' | 'review' | 'committing' | 'result' | 'un
 })
 export class CsvImportComponent {
     private readonly itemService = inject(ItemService);
+    private readonly notification = inject(NotificationService);
     private readonly destroyRef = inject(DestroyRef);
     private readonly injector = inject(Injector);
     private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -124,6 +128,16 @@ export class CsvImportComponent {
     /** The file the current preview came from, kept to preview it again. */
     private previewedFile: File | null = null;
     private previewSubscription: Subscription | null = null;
+
+    constructor() {
+        // The page only lets this component go while saving when a sign-out
+        // redirects to the login page. The request may still save rows.
+        this.destroyRef.onDestroy(() => {
+            if (this.committing()) {
+                this.notification.warn(SIGNED_OUT_WHILE_SAVING, { duration: 15000 });
+            }
+        });
+    }
 
     handleFileChange(event: Event): void {
         const input = event.target as HTMLInputElement | null;

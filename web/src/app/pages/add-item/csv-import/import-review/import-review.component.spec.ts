@@ -4,7 +4,7 @@ import { provideRouter } from '@angular/router';
 
 import { CsvImportReviewComponent, RowChoice, RowToggle } from './import-review.component';
 import { reviewRows } from '../csv-import-review';
-import { demoPreview } from '../csv-import.fixtures';
+import { demoPreview, rowWithItem } from '../csv-import.fixtures';
 
 describe('CsvImportReviewComponent', () => {
     let fixture: ComponentFixture<CsvImportReviewComponent>;
@@ -162,5 +162,173 @@ describe('CsvImportReviewComponent', () => {
             '.selection-actions button',
         ) as NodeListOf<HTMLButtonElement>;
         expect(Array.from(selectionButtons).every((button) => button.disabled)).toBe(true);
+    });
+
+    describe('what will be saved', () => {
+        /** Label → shown value of the "What will be saved" list for a row. */
+        const savedValues = (row: number): Record<string, string> =>
+            Object.fromEntries(
+                Array.from(
+                    fixture.nativeElement.querySelectorAll(
+                        `#csv-row-details-${row} .saved-field`,
+                    ) as NodeListOf<HTMLElement>,
+                ).map((field) => [
+                    field.querySelector('dt')?.textContent?.trim(),
+                    field.querySelector('dd')?.textContent?.trim(),
+                ]),
+            );
+        const notSetLabels = (row: number): string[] =>
+            Array.from(
+                fixture.nativeElement.querySelectorAll(
+                    `#csv-row-details-${row} .saved-field dd.not-set`,
+                ) as NodeListOf<HTMLElement>,
+            ).map((dd) => dd.parentElement?.querySelector('dt')?.textContent?.trim() ?? '');
+        const openDetails = (row: number) => {
+            detailsButton(row).click();
+            fixture.detectChanges();
+        };
+
+        it('discloses the exact reviewed values of an ordinary ready row', () => {
+            const book = rowWithItem(2, 'ready', {
+                title: 'The Lantern Archive',
+                creator: 'M. Ellery',
+                releaseYear: 2021,
+                pageCount: 412,
+                isbn13: '9781111111111',
+                isbn10: '1111111111',
+                format: 'HARDCOVER',
+                genre: 'FICTION',
+                rating: 8,
+                retailPriceUsd: 24.5,
+                googleVolumeId: 'vol-lantern',
+                readingStatus: 'read',
+                readAt: '2024-01-10T00:00:00Z',
+                seriesName: 'Archive Cycle',
+                volumeNumber: 2,
+                totalVolumes: 5,
+                description: 'A long description\nthat spans lines.',
+                coverImage: 'https://example.com/cover.jpg',
+                notes: 'Gift from a friend',
+                createdAt: '2024-01-01T00:00:00Z',
+                updatedAt: '2024-01-02T00:00:00Z',
+            });
+            fixture.componentRef.setInput('rows', reviewRows([book], new Map(), new Set()));
+            fixture.detectChanges();
+
+            expect(detailsButton(2).textContent).toContain('Details');
+            openDetails(2);
+
+            expect(
+                fixture.nativeElement.querySelector('#csv-row-details-2 .saved-heading')
+                    ?.textContent,
+            ).toContain('What will be saved');
+            expect(savedValues(2)).toEqual({
+                Title: 'The Lantern Archive',
+                Creator: 'M. Ellery',
+                Type: 'Book',
+                'Release year': '2021',
+                'ISBN-13': '9781111111111',
+                'ISBN-10': '1111111111',
+                Pages: '412',
+                Format: 'Hardcover',
+                Genre: 'Fiction',
+                Rating: '8 / 10',
+                'Retail price': '$24.50',
+                'Google Books ID': 'vol-lantern',
+                'Reading status': 'Read',
+                'Read on': 'Jan 10, 2024',
+                Series: 'Archive Cycle · Volume 2 of 5',
+                'Added on': 'Jan 1, 2024',
+                'Last updated': 'Jan 2, 2024',
+                Description: 'A long description\nthat spans lines.',
+                'Cover image': 'https://example.com/cover.jpg',
+                Notes: 'Gift from a friend',
+            });
+            expect(notSetLabels(2)).toEqual([]);
+        });
+
+        it('shows empty values as not set and only lists fields the type saves', () => {
+            const movie = rowWithItem(3, 'ready', { title: 'Night Ferry', itemType: 'movie' });
+            const reading = rowWithItem(4, 'ready', {
+                title: 'Half Read',
+                readingStatus: 'reading',
+                format: 'UNKNOWN',
+                coverImage: 'data:image/png;base64,aGVsbG8=',
+            });
+            fixture.componentRef.setInput(
+                'rows',
+                reviewRows([movie, reading], new Map(), new Set()),
+            );
+            fixture.detectChanges();
+            openDetails(3);
+            openDetails(4);
+
+            expect(savedValues(3)).toEqual({
+                Title: 'Night Ferry',
+                Creator: 'Not set',
+                Type: 'Movie',
+                'Release year': 'Not set',
+                'Added on': 'When imported',
+                'Last updated': 'Same as added on',
+                Description: 'Not set',
+                'Cover image': 'Not set',
+                Notes: 'Not set',
+            });
+            expect(notSetLabels(3)).toEqual([
+                'Creator',
+                'Release year',
+                'Description',
+                'Cover image',
+                'Notes',
+            ]);
+            expect(
+                fixture.nativeElement.querySelector('#csv-row-details-3 .detail-note')?.textContent,
+            ).toContain('Only fields that apply to Movie items are saved.');
+
+            const book = savedValues(4);
+            expect(book['Reading status']).toBe('Reading');
+            expect(book['Current page']).toBe('Not set');
+            expect(book['Format']).toBe('Unknown');
+            expect(book['Genre']).toBe('Not set');
+            expect(book['Cover image']).toBe('Embedded image');
+            expect(book['Read on']).toBeUndefined();
+        });
+
+        it('shows the chosen edition merged with the CSV values', () => {
+            fixture.componentRef.setInput(
+                'rows',
+                reviewRows(demoPreview().rows, new Map([[6, 0]]), new Set()),
+            );
+            fixture.detectChanges();
+            openDetails(6);
+
+            const first = savedValues(6);
+            expect(first['Title']).toBe('Paper Moons');
+            expect(first['Creator']).toBe('CSV Author');
+            expect(first['Notes']).toBe('Signed copy');
+            expect(first['Google Books ID']).toBe('vol-first');
+
+            fixture.componentRef.setInput(
+                'rows',
+                reviewRows(demoPreview().rows, new Map([[6, 1]]), new Set()),
+            );
+            fixture.detectChanges();
+            const second = savedValues(6);
+            expect(second['Title']).toBe('Copper Garden');
+            expect(second['Google Books ID']).toBe('vol-second');
+            expect(second['Notes']).toBe('Not set');
+        });
+
+        it('only changes the view when details open or close', () => {
+            const before = fixture.componentInstance.rows();
+            openDetails(2);
+            expect(detailsButton(2).getAttribute('aria-expanded')).toBe('true');
+            openDetails(2);
+            expect(fixture.nativeElement.querySelector('#csv-row-details-2')).toBeNull();
+
+            expect(toggles).toEqual([]);
+            expect(choices).toEqual([]);
+            expect(fixture.componentInstance.rows()).toBe(before);
+        });
     });
 });

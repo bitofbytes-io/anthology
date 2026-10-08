@@ -583,6 +583,10 @@ describe(AddItemPageComponent.name, () => {
             'Dismiss',
             expect.anything(),
         );
-        expect(addItemDeactivateGuard(page, {} as never, {} as never, {} as never)).toBe(false);
+        expect(
+            TestBed.runInInjectionContext(() =>
+                addItemDeactivateGuard(page, {} as never, {} as never, { url: '/' } as never),
+            ),
+        ).toBe(false);
     });
 });

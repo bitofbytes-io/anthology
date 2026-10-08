@@ -7,6 +7,8 @@ import { Subject, of, throwError } from 'rxjs';
 import { CsvImportComponent } from './csv-import.component';
 import { CsvCommitResult, CsvCommitRow, CsvImportPreview } from '../../../models/import';
 import { ItemService } from '../../../services/item.service';
+import { NotificationService } from '../../../services/notification.service';
+import { commitRows } from './csv-import-review';
 import { demoPreview } from './csv-import.fixtures';
 
 describe('CsvImportComponent', () => {
@@ -16,6 +18,7 @@ describe('CsvImportComponent', () => {
         previewCsvImport: ReturnType<typeof vi.fn>;
         commitCsvImport: ReturnType<typeof vi.fn>;
     };
+    let notification: { warn: ReturnType<typeof vi.fn> };
     let busy: boolean[];
     let reviewActive: boolean[];
 
@@ -55,12 +58,14 @@ describe('CsvImportComponent', () => {
 
     beforeEach(async () => {
         itemService = { previewCsvImport: vi.fn(), commitCsvImport: vi.fn() };
+        notification = { warn: vi.fn() };
         await TestBed.configureTestingModule({
             imports: [CsvImportComponent],
             providers: [
                 provideNoopAnimations(),
                 provideRouter([]),
                 { provide: ItemService, useValue: itemService },
+                { provide: NotificationService, useValue: notification },
             ],
         }).compileComponents();
 
@@ -256,6 +261,80 @@ describe('CsvImportComponent', () => {
         );
         expect(tiles).toEqual(['7 Added', '2 Skipped', '0 Failed', '1 Not imported']);
         expect(fixture.nativeElement.querySelectorAll('.outcome-row').length).toBe(10);
+    });
+
+    it('shows ready row details without changing the selection or the commit payload', () => {
+        const preview = demoPreview();
+        startReview(preview);
+        const toggle = (): HTMLButtonElement =>
+            fixture.nativeElement.querySelector('[aria-controls="csv-row-details-2"]');
+        const selectedBefore = component.counts().selected;
+        const payloadBefore = commitRows(component.rows());
+
+        toggle().click();
+        fixture.detectChanges();
+        const shown = Object.fromEntries(
+            Array.from(
+                fixture.nativeElement.querySelectorAll(
+                    '#csv-row-details-2 .saved-field',
+                ) as NodeListOf<HTMLElement>,
+            ).map((field) => [
+                field.querySelector('dt')?.textContent?.trim(),
+                field.querySelector('dd')?.textContent?.trim(),
+            ]),
+        );
+        toggle().click();
+        fixture.detectChanges();
+        toggle().click();
+        fixture.detectChanges();
+
+        expect(itemService.commitCsvImport).not.toHaveBeenCalled();
+        expect(component.counts().selected).toBe(selectedBefore);
+        expect(commitRows(component.rows())).toEqual(payloadBefore);
+
+        itemService.commitCsvImport.mockReturnValue(new Subject<CsvCommitResult>());
+        component.handleCommit();
+        const sent = (itemService.commitCsvImport.mock.calls[0][0] as CsvCommitRow[]).find(
+            (row) => row.row === 2,
+        );
+        expect(sent?.item).toEqual(preview.rows[0].item);
+        expect(shown['Title']).toBe(sent?.item.title);
+        expect(shown['Creator']).toBe(sent?.item.creator);
+        expect(shown['ISBN-13']).toBe(sent?.item.isbn13);
+    });
+
+    it('warns that rows may be saved when it is torn down mid-save', () => {
+        startReview();
+        itemService.commitCsvImport.mockReturnValue(new Subject<CsvCommitResult>());
+        component.handleCommit();
+
+        fixture.destroy();
+
+        expect(notification.warn).toHaveBeenCalledOnce();
+        const [message, options] = notification.warn.mock.calls[0];
+        expect(message).toContain('some rows may have been saved');
+        expect(message).toContain('preview the file again');
+        expect(message).not.toMatch(/nothing was (saved|imported)|cancel/i);
+        expect(options).toEqual({ duration: 15000 });
+    });
+
+    it('does not warn when torn down while nothing is saving', () => {
+        startReview();
+        fixture.destroy();
+
+        itemService.commitCsvImport.mockImplementation((rows: CsvCommitRow[]) =>
+            of(allAdded(rows)),
+        );
+        const second = TestBed.createComponent(CsvImportComponent);
+        second.componentInstance.handleFileChange({
+            target: { files: [csvFile()] },
+        } as unknown as Event);
+        second.componentInstance.handlePreview();
+        second.componentInstance.handleCommit();
+        expect(second.componentInstance.stage()).toBe('result');
+        second.destroy();
+
+        expect(notification.warn).not.toHaveBeenCalled();
     });
 
     it('ignores review changes while saving', () => {

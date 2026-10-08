@@ -166,6 +166,32 @@
                             </button>
                         }
                     }
+
+                    @if (row.status === 'ready' && row.item; as item) {
+                        <section
+                            class="saved-details"
+                            [attr.aria-labelledby]="'csv-row-saved-' + row.source.row"
+                        >
+                            <h5 class="saved-heading" [id]="'csv-row-saved-' + row.source.row">
+                                What will be saved
+                            </h5>
+                            <p class="detail-note">
+                                These are the exact details saved for this row if you import it.
+                                Only fields that apply to {{ typeLabel(item.itemType) }} items are
+                                saved.
+                            </p>
+                            <dl class="saved-fields">
+                                @for (field of savedFields(item); track field.label) {
+                                    <div class="saved-field" [class.wide]="field.wide">
+                                        <dt>{{ field.label }}</dt>
+                                        <dd [class.not-set]="field.value === null">
+                                            {{ field.value ?? 'Not set' }}
+                                        </dd>
+                                    </div>
+                                }
+                            </dl>
+                        </section>
+                    }
                 </div>
             }
         </li>

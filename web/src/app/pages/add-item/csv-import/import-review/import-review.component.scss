@@ -191,6 +191,50 @@
     color: var(--mat-sys-secondary);
 }
 
+.saved-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.saved-heading {
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+.saved-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+    gap: 0.5rem 1rem;
+    margin: 0;
+}
+
+.saved-field {
+    min-width: 0;
+}
+
+.saved-field.wide {
+    grid-column: 1 / -1;
+}
+
+.saved-field dt {
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--mat-sys-on-surface-variant);
+}
+
+.saved-field dd {
+    margin: 0.15rem 0 0;
+    overflow-wrap: anywhere;
+    white-space: pre-line;
+}
+
+.saved-field dd.not-set {
+    font-style: italic;
+    color: var(--mat-sys-on-surface-variant);
+}
+
 .empty {
     padding: 1rem;
     color: var(--mat-sys-on-surface-variant);
