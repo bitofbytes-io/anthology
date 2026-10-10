@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"anthology/internal/auth"
 )
 
 // Config aggregates runtime configuration for the Anthology services.
@@ -103,7 +105,9 @@ func Load() (Config, error) {
 	if cfg.GoogleClientSecret == "" {
 		return Config{}, fmt.Errorf("AUTH_GOOGLE_CLIENT_SECRET is required")
 	}
-	if len(cfg.GoogleAllowedDomains) == 0 && len(cfg.GoogleAllowedEmails) == 0 {
+	// Check the allowlist as auth normalizes it: an empty allowlist admits
+	// everyone, so entries such as "@" that normalize away must not count.
+	if auth.NewAllowlist(cfg.GoogleAllowedDomains, cfg.GoogleAllowedEmails).IsEmpty() {
 		return Config{}, fmt.Errorf("AUTH_GOOGLE_ALLOWED_DOMAINS or AUTH_GOOGLE_ALLOWED_EMAILS is required")
 	}
 
