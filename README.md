@@ -89,7 +89,7 @@ docker run -d --name anthology-ui --network anthology \
   anthology-ui:local
 ```
 
-Open <http://localhost:4200>. The API applies embedded Goose migrations automatically during startup. Its public health checks are available at <http://localhost:8080/health> and <http://localhost:8080/api/health>.
+Open <http://localhost:4200>. The API applies embedded Goose migrations automatically during startup. Its public liveness checks, <http://localhost:8080/health> and <http://localhost:8080/api/health>, always return `{"status":"ok"}` while the process is up. Its readiness checks, <http://localhost:8080/ready> and <http://localhost:8080/api/ready>, also ping Postgres (2s timeout) and return 503 `{"db":"error","status":"degraded"}` when the database is unreachable; point orchestrator healthchecks and uptime monitors at `/ready`. The UI container serves static `/health` and `/ready` endpoints because it has no runtime dependencies.
 
 For production, use HTTPS, set `APP_ENV=production`, use a strong database password, restrict the Google API key, and provide secrets through your platform's secret manager.
 

@@ -57,11 +57,12 @@ OAuth sessions are stored in Postgres; Postgres is required for all deployments.
 
 ## Endpoints (current)
 
-Base URL: `http://<host>:<port>`. Application endpoints under `/api/*` require the session cookie; `/health` and `/api/health` remain public.
+Base URL: `http://<host>:<port>`. Application endpoints under `/api/*` require the session cookie; `/health`, `/api/health`, `/ready`, and `/api/ready` remain public.
 
 | Method | Path | Description | Handler |
 | --- | --- | --- | --- |
-| GET | `/health`, `/api/health` | Liveness; returns `{"status":"ok"}`. | inline in router |
+| GET | `/health`, `/api/health` | Liveness; always returns `{"status":"ok"}` without touching dependencies. | `healthHandler` |
+| GET | `/ready`, `/api/ready` | Readiness; pings Postgres with a 2s timeout. Returns 200 `{"db":"ok","status":"ok"}` or 503 `{"db":"error","status":"degraded"}` (error details are logged, never returned). | `newReadyHandler` |
 | GET | `/api/auth/google` | Initiate Google OAuth. | `OAuthHandler.InitiateGoogle` |
 | GET | `/api/auth/google/callback` | Handle OAuth callback, set session. | `OAuthHandler.CallbackGoogle` |
 | GET | `/api/session` | Report session status and user (if authenticated). | `SessionHandler.Status` |
@@ -338,4 +339,5 @@ go run ./cmd/api
 ```
 
 Health: `curl http://localhost:8080/health` or `curl http://localhost:8080/api/health`
+Readiness (includes a database ping): `curl http://localhost:8080/ready` or `curl http://localhost:8080/api/ready`
 List items (dev without OAuth): `curl http://localhost:8080/api/items`

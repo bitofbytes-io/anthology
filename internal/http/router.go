@@ -63,8 +63,9 @@ func newRequestTimeoutMiddleware() func(http.Handler) http.Handler {
 	}
 }
 
-// NewRouter wires application routes and middleware using chi.
-func NewRouter(cfg config.Config, svc *items.Service, catalogSvc *catalog.Service, shelfSvc *shelves.Service, authService *auth.Service, googleAuth *auth.GoogleAuthenticator, logger *slog.Logger) http.Handler {
+// NewRouter wires application routes and middleware using chi. db backs the
+// /ready check; a nil db reports degraded.
+func NewRouter(cfg config.Config, svc *items.Service, catalogSvc *catalog.Service, shelfSvc *shelves.Service, authService *auth.Service, googleAuth *auth.GoogleAuthenticator, db Pinger, logger *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -82,12 +83,9 @@ func NewRouter(cfg config.Config, svc *items.Service, catalogSvc *catalog.Servic
 	r.Use(newSameOriginMiddleware(cfg.AllowedOrigins))
 	r.Use(newSlogMiddleware(logger))
 
-	healthHandler := func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "ok",
-		})
-	}
+	readyHandler := newReadyHandler(db, logger)
 	r.Get("/health", healthHandler)
+	r.Get("/ready", readyHandler)
 
 	sessionHandler := NewSessionHandler(authService, cfg.Environment, logger)
 	bulkImporter := importer.NewCSVImporter(svc, catalogSvc)
@@ -98,6 +96,7 @@ func NewRouter(cfg config.Config, svc *items.Service, catalogSvc *catalog.Servic
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", healthHandler)
+		r.Get("/ready", readyHandler)
 
 		// OAuth routes (unauthenticated)
 		if googleAuth != nil {

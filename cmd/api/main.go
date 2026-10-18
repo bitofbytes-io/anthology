@@ -83,7 +83,7 @@ func main() {
 	lookupClient := &http.Client{Timeout: 12 * time.Second}
 	catalogSvc := catalog.NewService(lookupClient, catalog.WithGoogleBooksAPIKey(cfg.GoogleBooksAPIKey))
 	shelfSvc := shelves.NewService(shelfRepo, itemRepo, catalogSvc, svc)
-	router := transporthttp.NewRouter(cfg, svc, catalogSvc, shelfSvc, authService, googleAuth, logger)
+	router := transporthttp.NewRouter(cfg, svc, catalogSvc, shelfSvc, authService, googleAuth, db, logger)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddress(),
