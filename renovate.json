@@ -12,6 +12,7 @@
     {
       "description": "One weekly PR for GitHub Actions updates.",
       "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
       "groupName": "GitHub Actions"
     },
     {
