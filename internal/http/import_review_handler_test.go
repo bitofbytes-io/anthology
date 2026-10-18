@@ -266,7 +266,7 @@ func TestImportReviewRoundTripThroughRouter(t *testing.T) {
 	catalogService := catalog.NewService(books.Client(), catalog.WithGoogleBooksBaseURL(books.URL))
 	router := NewRouter(
 		config.Config{Environment: "development", AllowedOrigins: []string{origin}},
-		service, catalogService, nil, authService, nil,
+		service, catalogService, nil, authService, nil, nil,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	send := func(req *http.Request) *httptest.ResponseRecorder {
@@ -339,6 +339,7 @@ func TestImportReviewRoutesRequireAuthAndSameOrigin(t *testing.T) {
 	router := NewRouter(
 		config.Config{Environment: "development", AllowedOrigins: []string{origin}},
 		items.NewService(items.NewInMemoryRepository(nil)),
+		nil,
 		nil,
 		nil,
 		nil,
