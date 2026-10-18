@@ -62,8 +62,13 @@ func TestHealthRoutes(t *testing.T) {
 
 func TestReadyRoutesReportOKWhenDatabasePings(t *testing.T) {
 	router := newHealthTestRouter(pingerFunc(func(ctx context.Context) error {
-		if _, ok := ctx.Deadline(); !ok {
+		// The router's 60s request timeout also sets a deadline, so check the
+		// ping gets the tighter readiness bound.
+		deadline, ok := ctx.Deadline()
+		if !ok {
 			t.Error("ping context has no deadline")
+		} else if remaining := time.Until(deadline); remaining > readyTimeout {
+			t.Errorf("ping deadline in %s, want at most %s", remaining, readyTimeout)
 		}
 		return nil
 	}))
