@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"mime/multipart"
@@ -9,6 +10,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"anthology/internal/config"
 	"anthology/internal/importer"
@@ -83,6 +87,62 @@ func TestOAuthCallbackFailureIsCounted(t *testing.T) {
 
 	if body := scrapeMetrics(t, m); !strings.Contains(body, `anthology_oauth_failures_total{provider="google"} 1`) {
 		t.Fatalf("expected one Google OAuth failure, got:\n%s", body)
+	}
+}
+
+// The metrics middleware wraps the response writer, so the CSV import's write
+// deadline extension must still reach the connection through it.
+func TestCSVImportOutlivesServerWriteTimeoutThroughMetricsMiddleware(t *testing.T) {
+	m := metrics.New()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := NewItemHandler(nil, nil, importer.NewCSVImporter(&csvStoreStub{}, slowCatalogStub{delay: 300 * time.Millisecond}), logger)
+	handler.metrics = m
+
+	r := chi.NewRouter()
+	r.Use(m.Middleware(r))
+	r.Use(newSlogMiddleware(logger))
+	r.Post(csvImportPath, func(w http.ResponseWriter, r *http.Request) {
+		handler.ImportCSV(w, reqWithUser(r))
+	})
+	srv := httptest.NewUnstartedServer(r)
+	srv.Config.WriteTimeout = 100 * time.Millisecond
+	srv.Start()
+	defer srv.Close()
+
+	upload := newMultipartCSVRequest(t, strings.Join([]string{
+		"title,creator,itemType,releaseYear,pageCount,isbn13,isbn10,description,coverImage,notes",
+		",,book,,,9780000000001,,,,",
+	}, "\n"))
+	req, err := http.NewRequest(http.MethodPost, srv.URL+csvImportPath, upload.Body)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("Content-Type", upload.Header.Get("Content-Type"))
+
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("import response lost after server WriteTimeout: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+	var summary importer.Summary
+	if err := json.NewDecoder(resp.Body).Decode(&summary); err != nil {
+		t.Fatalf("decode summary: %v", err)
+	}
+	if summary.Imported != 1 {
+		t.Fatalf("expected one imported row, got %+v", summary)
+	}
+
+	body := scrapeMetrics(t, m)
+	for _, want := range []string{
+		`http_requests_total{method="POST",route="/api/items/import",status="200"} 1`,
+		`anthology_uploads_total{result="success"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics output missing %q", want)
+		}
 	}
 }
 
