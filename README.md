@@ -59,6 +59,7 @@ Do not commit this file. `AUTH_GOOGLE_ALLOWED_DOMAINS` can replace or supplement
 | `APP_ENV` | No | `development` or `production`; defaults to `production` |
 | `PORT` | No | API port; defaults to `8080` |
 | `LOG_LEVEL` | No | Application log level; defaults to `info` |
+| `METRICS_ADDR` | No | Internal Prometheus listener address; defaults to `:9464`, `off` disables it |
 
 The four secret values also support matching `*_FILE` variables. The image defaults to files under `/run/secrets/anthology_*`, making Docker or Kubernetes secret mounts usable without placing credentials in environment variables.
 
@@ -92,6 +93,17 @@ docker run -d --name anthology-ui --network anthology \
 Open <http://localhost:4200>. The API applies embedded Goose migrations automatically during startup. Its public liveness checks, <http://localhost:8080/health> and <http://localhost:8080/api/health>, always return `{"status":"ok"}` while the process is up. Its readiness checks, <http://localhost:8080/ready> and <http://localhost:8080/api/ready>, also ping Postgres (2s timeout) and return 503 `{"db":"error","status":"degraded"}` when the database is unreachable; point orchestrator healthchecks and uptime monitors at `/ready`. The UI container serves static `/health` and `/ready` endpoints because it has no runtime dependencies.
 
 For production, use HTTPS, set `APP_ENV=production`, use a strong database password, restrict the Google API key, and provide secrets through your platform's secret manager.
+
+### Metrics
+
+The API serves Prometheus metrics at `GET /metrics` on a separate internal listener, `METRICS_ADDR` (default `:9464`), never on the public port, so a reverse proxy routing the public port cannot expose them. Set `METRICS_ADDR=off` to disable the listener; if the address cannot be bound, the API logs an error and keeps serving without metrics. Do not publish the metrics port; scrape it over a private network. The listener exposes:
+
+- `http_requests_total` and `http_request_duration_seconds`, labelled by `method`, chi route pattern (`route`, for example `/api/items/{id}`; requests matching no route are `unmatched`), and `status`. `/health`, `/ready`, and `/metrics` are not counted.
+- `go_sql_*` connection pool stats for the Postgres pool (`db_name="anthology"`).
+- `anthology_oauth_failures_total{provider}`: Google sign-ins that did not end in a session (the only way to log in).
+- `anthology_uploads_total{result}`: CSV import and preview uploads, by `success`, `invalid`, `too_large`, or `error`.
+- `anthology_jobs_total{job,result}`: background job runs (`session_cleanup`), by `success` or `error`.
+- Go runtime (`go_*`) and process (`process_*`) metrics.
 
 ## Development
 
