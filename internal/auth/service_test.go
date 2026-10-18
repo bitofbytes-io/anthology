@@ -3,6 +3,8 @@ package auth
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -394,7 +396,7 @@ func TestServiceScheduleSessionCleanupRunsAtStartupAndOnEachTick(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		svc.ScheduleSessionCleanup(ctx, 10*time.Millisecond, nil)
+		svc.ScheduleSessionCleanup(ctx, 10*time.Millisecond, nil, nil)
 		close(done)
 	}()
 
@@ -411,5 +413,31 @@ func TestServiceScheduleSessionCleanupRunsAtStartupAndOnEachTick(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("ScheduleSessionCleanup did not stop after cancel")
+	}
+}
+
+func TestServiceScheduleSessionCleanupReportsEachRun(t *testing.T) {
+	cleanupErr := errors.New("db unavailable")
+	repo := &repoStub{
+		deleteExpiredSessions: func(ctx context.Context) (int64, error) {
+			return 0, cleanupErr
+		},
+	}
+	svc := NewService(repo, time.Hour, nil)
+
+	results := make(chan error, 10)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go svc.ScheduleSessionCleanup(ctx, 10*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)), func(err error) {
+		results <- err
+	})
+
+	select {
+	case err := <-results:
+		if !errors.Is(err, cleanupErr) {
+			t.Fatalf("onRun error = %v, want %v", err, cleanupErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected onRun to be called")
 	}
 }

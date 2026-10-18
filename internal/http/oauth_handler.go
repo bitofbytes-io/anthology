@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"anthology/internal/auth"
+	"anthology/internal/metrics"
 )
 
 // oauthStatePayload holds the CSRF state and optional redirect path.
@@ -71,6 +72,7 @@ type OAuthHandler struct {
 	google       googleAuthenticator
 	authService  *auth.Service
 	logger       *slog.Logger
+	metrics      *metrics.Metrics
 	secureCookie bool
 	frontendURL  string
 }
@@ -92,6 +94,7 @@ func (h *OAuthHandler) InitiateGoogle(w http.ResponseWriter, r *http.Request) {
 	state, err := auth.GenerateState()
 	if err != nil {
 		h.logger.Error("failed to generate state", "error", err)
+		h.metrics.OAuthFailure(metrics.ProviderGoogle)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -243,8 +246,10 @@ func (h *OAuthHandler) CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, h.frontendURL+redirectTo, http.StatusTemporaryRedirect)
 }
 
-// redirectWithError redirects to the login page with error details.
+// redirectWithError counts a failed Google sign-in and redirects to the login
+// page with error details.
 func (h *OAuthHandler) redirectWithError(w http.ResponseWriter, r *http.Request, code, message string) {
+	h.metrics.OAuthFailure(metrics.ProviderGoogle)
 	target := h.frontendURL + "/login?error=" + url.QueryEscape(code)
 	if message != "" {
 		target += "&message=" + url.QueryEscape(message)

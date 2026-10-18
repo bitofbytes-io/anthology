@@ -158,6 +158,33 @@ func TestLoadDefaultsToProduction(t *testing.T) {
 	}
 }
 
+func TestLoadMetricsAddr(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "unset uses default", value: "", want: ":9464"},
+		{name: "custom address", value: "127.0.0.1:9500", want: "127.0.0.1:9500"},
+		{name: "off disables", value: "off", want: ""},
+		{name: "off is case-insensitive", value: " OFF ", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setAllowlistTestEnv(t, "example.com", "")
+			t.Setenv("METRICS_ADDR", tt.value)
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load() returned error: %v", err)
+			}
+			if cfg.MetricsAddr != tt.want {
+				t.Fatalf("MetricsAddr = %q, want %q", cfg.MetricsAddr, tt.want)
+			}
+		})
+	}
+}
+
 func setAllowlistTestEnv(t *testing.T, domains, emails string) {
 	t.Helper()
 	t.Setenv("APP_ENV", "development")

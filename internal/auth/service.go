@@ -158,8 +158,9 @@ func (s *Service) CleanupExpiredSessions(ctx context.Context) (int64, error) {
 }
 
 // ScheduleSessionCleanup deletes expired sessions at startup and then every
-// interval until ctx is cancelled.
-func (s *Service) ScheduleSessionCleanup(ctx context.Context, interval time.Duration, logger *slog.Logger) {
+// interval until ctx is cancelled. onRun, when non-nil, receives the result of
+// each run that was not cut short by ctx.
+func (s *Service) ScheduleSessionCleanup(ctx context.Context, interval time.Duration, logger *slog.Logger, onRun func(error)) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -169,12 +170,16 @@ func (s *Service) ScheduleSessionCleanup(ctx context.Context, interval time.Dura
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		if deleted, err := s.CleanupExpiredSessions(ctx); err != nil {
+		deleted, err := s.CleanupExpiredSessions(ctx)
+		if err != nil {
 			if ctx.Err() == nil {
 				logger.Error("expired session cleanup failed", "error", err)
 			}
 		} else if deleted > 0 {
 			logger.Info("expired sessions deleted", "count", deleted)
+		}
+		if onRun != nil && ctx.Err() == nil {
+			onRun(err)
 		}
 		select {
 		case <-ctx.Done():
