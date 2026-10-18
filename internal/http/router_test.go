@@ -27,6 +27,7 @@ func newHealthTestRouter(db Pinger) http.Handler {
 		nil,
 		db,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		nil,
 	)
 }
 

@@ -16,6 +16,7 @@ import (
 	"anthology/internal/config"
 	transporthttp "anthology/internal/http"
 	"anthology/internal/items"
+	"anthology/internal/metrics"
 	"anthology/internal/platform/database"
 	"anthology/internal/platform/logging"
 	"anthology/internal/platform/migrate"
@@ -83,7 +84,10 @@ func main() {
 	lookupClient := &http.Client{Timeout: 12 * time.Second}
 	catalogSvc := catalog.NewService(lookupClient, catalog.WithGoogleBooksAPIKey(cfg.GoogleBooksAPIKey))
 	shelfSvc := shelves.NewService(shelfRepo, itemRepo, catalogSvc, svc)
-	router := transporthttp.NewRouter(cfg, svc, catalogSvc, shelfSvc, authService, googleAuth, db, logger)
+
+	appMetrics := metrics.New()
+	appMetrics.RegisterDB(db.DB, "anthology")
+	router := transporthttp.NewRouter(cfg, svc, catalogSvc, shelfSvc, authService, googleAuth, db, logger, appMetrics)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddress(),
@@ -100,11 +104,22 @@ func main() {
 	cleanup.Add(1)
 	go func() {
 		defer cleanup.Done()
-		authService.ScheduleSessionCleanup(cleanupCtx, auth.SessionCleanupInterval, logger)
+		authService.ScheduleSessionCleanup(cleanupCtx, auth.SessionCleanupInterval, logger, func(err error) {
+			result := metrics.JobSuccess
+			if err != nil {
+				result = metrics.JobError
+			}
+			appMetrics.Job(metrics.JobSessionCleanup, result)
+		})
 	}()
+
+	// Metrics are served on their own listener so the public router (and the
+	// reverse proxy in front of it) never exposes them.
+	metricsSrv := metrics.Start(cfg.MetricsAddr, appMetrics.Handler(), logger)
 
 	logger.Info("Anthology API listening", "addr", srv.Addr, "version", version, "revision", revision)
 	serveErr := serve(ctx, srv, logger)
+	shutdownMetrics(metricsSrv, logger)
 	stopCleanup()
 	cleanup.Wait()
 	if serveErr != nil {
@@ -140,4 +155,14 @@ func serve(ctx context.Context, srv *http.Server, logger *slog.Logger) error {
 		logger.Error("graceful shutdown failed", "error", err)
 	}
 	return nil
+}
+
+// shutdownMetrics gracefully stops the metrics listener, if one is running.
+func shutdownMetrics(srv *metrics.Server, logger *slog.Logger) {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		logger.Error("metrics listener shutdown failed", "error", err)
+	}
 }

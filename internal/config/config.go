@@ -19,6 +19,9 @@ type Config struct {
 	AllowedOrigins    []string
 	GoogleBooksAPIKey string
 
+	// MetricsAddr is the internal Prometheus listener address; empty disables it.
+	MetricsAddr string
+
 	// Google OAuth
 	GoogleClientID       string
 	GoogleClientSecret   string
@@ -73,6 +76,7 @@ func Load() (Config, error) {
 		LogLevel:          strings.ToLower(getEnv("LOG_LEVEL", "info")),
 		AllowedOrigins:    parseCSV(getEnv("ALLOWED_ORIGINS", "http://localhost:4200,http://localhost:8080")),
 		GoogleBooksAPIKey: strings.TrimSpace(googleBooksAPIKey),
+		MetricsAddr:       parseMetricsAddr(os.Getenv("METRICS_ADDR")),
 
 		// Google OAuth
 		GoogleClientID:       trimmedGoogleClientID,
@@ -123,6 +127,23 @@ func Load() (Config, error) {
 // HTTPAddress returns the address the HTTP server should bind to.
 func (c Config) HTTPAddress() string {
 	return fmt.Sprintf(":%d", c.HTTPPort)
+}
+
+// DefaultMetricsAddr is the metrics listener address when METRICS_ADDR is unset.
+const DefaultMetricsAddr = ":9464"
+
+// parseMetricsAddr returns the metrics listener address for a METRICS_ADDR
+// value: DefaultMetricsAddr when unset, "" (disabled) for "off".
+func parseMetricsAddr(value string) string {
+	value = strings.TrimSpace(value)
+	switch {
+	case value == "":
+		return DefaultMetricsAddr
+	case strings.EqualFold(value, "off"):
+		return ""
+	default:
+		return value
+	}
 }
 
 func getEnv(key, fallback string) string {

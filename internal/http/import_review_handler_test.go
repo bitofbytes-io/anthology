@@ -268,6 +268,7 @@ func TestImportReviewRoundTripThroughRouter(t *testing.T) {
 		config.Config{Environment: "development", AllowedOrigins: []string{origin}},
 		service, catalogService, nil, authService, nil, nil,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		nil,
 	)
 	send := func(req *http.Request) *httptest.ResponseRecorder {
 		req.Header.Set("Origin", origin)
@@ -345,6 +346,7 @@ func TestImportReviewRoutesRequireAuthAndSameOrigin(t *testing.T) {
 		nil,
 		nil,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		nil,
 	)
 	for _, path := range []string{csvImportPreviewPath, csvImportCommitPath} {
 		t.Run(path, func(t *testing.T) {

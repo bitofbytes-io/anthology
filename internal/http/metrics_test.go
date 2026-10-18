@@ -1,0 +1,177 @@
+package http
+
+import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+
+	"anthology/internal/config"
+	"anthology/internal/importer"
+	"anthology/internal/metrics"
+)
+
+func scrapeMetrics(t *testing.T, m *metrics.Metrics) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	metrics.NewMux(m.Handler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /metrics status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	return rec.Body.String()
+}
+
+func TestRouterRecordsREDMetricsByRoutePattern(t *testing.T) {
+	m := metrics.New()
+	router := NewRouter(
+		config.Config{Environment: "development"},
+		nil, nil, nil, nil, nil, nil,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		m,
+	)
+
+	const itemID = "3d4c1f0e-6a55-4d5e-9a3b-1c2d3e4f5a6b"
+	// Without a session cookie the auth middleware rejects protected routes
+	// before their subrouters run; they must still be labelled by pattern.
+	for _, req := range []*http.Request{
+		httptest.NewRequest(http.MethodGet, "/api/items/"+itemID, nil),
+		httptest.NewRequest(http.MethodGet, "/api/items/"+itemID+"?q=private", nil),
+		httptest.NewRequest(http.MethodGet, "/api/series/detail?name=private", nil),
+		httptest.NewRequest(http.MethodGet, "/api/unknown/"+itemID, nil),
+		httptest.NewRequest(http.MethodGet, "/health", nil),
+		httptest.NewRequest(http.MethodGet, "/api/health", nil),
+	} {
+		router.ServeHTTP(httptest.NewRecorder(), req)
+	}
+
+	// The public router must not serve metrics.
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("public GET /metrics status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+
+	body := scrapeMetrics(t, m)
+	for _, want := range []string{
+		`http_requests_total{method="GET",route="/api/items/{id}",status="401"} 2`,
+		`http_requests_total{method="GET",route="/api/series/detail",status="401"} 1`,
+		`http_requests_total{method="GET",route="unmatched",status="404"} 1`,
+		`http_request_duration_seconds_count{method="GET",route="/api/items/{id}",status="401"} 2`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics output missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{itemID, "private", "/health", "/metrics"} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("metrics output contains %q", unwanted)
+		}
+	}
+}
+
+func TestOAuthCallbackFailureIsCounted(t *testing.T) {
+	m := metrics.New()
+	handler := NewOAuthHandler(&fakeGoogleAuthenticator{}, nil, "http://frontend.test", "development", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler.metrics = m
+
+	// No state cookie: the callback fails before reaching Google.
+	handler.CallbackGoogle(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/auth/google/callback?state=x&code=y", nil))
+
+	if body := scrapeMetrics(t, m); !strings.Contains(body, `anthology_oauth_failures_total{provider="google"} 1`) {
+		t.Fatalf("expected one Google OAuth failure, got:\n%s", body)
+	}
+}
+
+// The metrics middleware wraps the response writer, so the CSV import's write
+// deadline extension must still reach the connection through it.
+func TestCSVImportOutlivesServerWriteTimeoutThroughMetricsMiddleware(t *testing.T) {
+	m := metrics.New()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := NewItemHandler(nil, nil, importer.NewCSVImporter(&csvStoreStub{}, slowCatalogStub{delay: 300 * time.Millisecond}), logger)
+	handler.metrics = m
+
+	r := chi.NewRouter()
+	r.Use(m.Middleware(r))
+	r.Use(newSlogMiddleware(logger))
+	r.Post(csvImportPath, func(w http.ResponseWriter, r *http.Request) {
+		handler.ImportCSV(w, reqWithUser(r))
+	})
+	srv := httptest.NewUnstartedServer(r)
+	srv.Config.WriteTimeout = 100 * time.Millisecond
+	srv.Start()
+	defer srv.Close()
+
+	upload := newMultipartCSVRequest(t, strings.Join([]string{
+		"title,creator,itemType,releaseYear,pageCount,isbn13,isbn10,description,coverImage,notes",
+		",,book,,,9780000000001,,,,",
+	}, "\n"))
+	req, err := http.NewRequest(http.MethodPost, srv.URL+csvImportPath, upload.Body)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("Content-Type", upload.Header.Get("Content-Type"))
+
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("import response lost after server WriteTimeout: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+	var summary importer.Summary
+	if err := json.NewDecoder(resp.Body).Decode(&summary); err != nil {
+		t.Fatalf("decode summary: %v", err)
+	}
+	if summary.Imported != 1 {
+		t.Fatalf("expected one imported row, got %+v", summary)
+	}
+
+	body := scrapeMetrics(t, m)
+	for _, want := range []string{
+		`http_requests_total{method="POST",route="/api/items/import",status="200"} 1`,
+		`anthology_uploads_total{result="success"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics output missing %q", want)
+		}
+	}
+}
+
+func TestCSVUploadsAreCountedByResult(t *testing.T) {
+	m := metrics.New()
+	handler := NewItemHandler(nil, nil, importer.NewCSVImporter(&csvStoreStub{}, nil), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler.metrics = m
+
+	handler.ImportCSV(httptest.NewRecorder(), reqWithUser(newMultipartCSVRequest(t, strings.Join([]string{
+		"title,creator,itemType,releaseYear,pageCount,isbn13,isbn10,description,coverImage,notes",
+		"Title A,Creator,book,2020,300,9780000000001,0000000001,Desc,,Notes",
+	}, "\n"))))
+	handler.PreviewCSVImport(httptest.NewRecorder(), reqWithUser(newMultipartCSVRequest(t, "title,itemType\nbad,csv\n")))
+
+	var missingFile bytes.Buffer
+	writer := multipart.NewWriter(&missingFile)
+	_ = writer.WriteField("other", "value")
+	_ = writer.Close()
+	req := httptest.NewRequest(http.MethodPost, csvImportPath, &missingFile)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	handler.ImportCSV(httptest.NewRecorder(), reqWithUser(req))
+
+	body := scrapeMetrics(t, m)
+	for _, want := range []string{
+		`anthology_uploads_total{result="success"} 1`,
+		`anthology_uploads_total{result="invalid"} 2`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics output missing %q", want)
+		}
+	}
+}

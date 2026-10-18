@@ -20,6 +20,7 @@ import (
 	"anthology/internal/exporter"
 	"anthology/internal/importer"
 	"anthology/internal/items"
+	"anthology/internal/metrics"
 )
 
 // ItemHandler exposes item CRUD endpoints.
@@ -29,6 +30,7 @@ type ItemHandler struct {
 	importer   *importer.CSVImporter
 	exporter   *exporter.CSVExporter
 	logger     *slog.Logger
+	metrics    *metrics.Metrics
 }
 
 // NewItemHandler creates a handler.
@@ -346,6 +348,7 @@ func (h *ItemHandler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 	defer closeUpload()
 
 	summary, err := h.importer.Import(r.Context(), file, user.ID)
+	h.metrics.Upload(csvUploadResult(err))
 	if err != nil {
 		if errors.Is(err, importer.ErrInvalidCSV) {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -378,6 +381,7 @@ func (h *ItemHandler) PreviewCSVImport(w http.ResponseWriter, r *http.Request) {
 	defer closeUpload()
 
 	preview, err := h.importer.Preview(r.Context(), file, user.ID)
+	h.metrics.Upload(csvUploadResult(err))
 	if err != nil {
 		if errors.Is(err, importer.ErrInvalidCSV) {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -468,9 +472,11 @@ func (h *ItemHandler) openCSVUpload(w http.ResponseWriter, r *http.Request) (mul
 	if err := r.ParseMultipartForm(maxCSVUploadBytes); err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
+			h.metrics.Upload(metrics.UploadTooLarge)
 			writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("CSV upload is too large (max %d bytes)", maxErr.Limit))
 			return nil, nil, false
 		}
+		h.metrics.Upload(metrics.UploadInvalid)
 		writeError(w, http.StatusBadRequest, "invalid CSV upload")
 		return nil, nil, false
 	}
@@ -483,6 +489,7 @@ func (h *ItemHandler) openCSVUpload(w http.ResponseWriter, r *http.Request) (mul
 	file, _, err := r.FormFile("file")
 	if err != nil {
 		removeForm()
+		h.metrics.Upload(metrics.UploadInvalid)
 		writeError(w, http.StatusBadRequest, "CSV file is required")
 		return nil, nil, false
 	}
@@ -490,6 +497,19 @@ func (h *ItemHandler) openCSVUpload(w http.ResponseWriter, r *http.Request) (mul
 		_ = file.Close()
 		removeForm()
 	}, true
+}
+
+// csvUploadResult maps the outcome of importing or previewing an uploaded CSV
+// to an anthology_uploads_total result.
+func csvUploadResult(err error) string {
+	switch {
+	case err == nil:
+		return metrics.UploadSuccess
+	case errors.Is(err, importer.ErrInvalidCSV):
+		return metrics.UploadInvalid
+	default:
+		return metrics.UploadError
+	}
 }
 
 // ExportCSV exports all items matching the given filters to CSV format.

@@ -15,6 +15,7 @@ import (
 	"anthology/internal/config"
 	"anthology/internal/importer"
 	"anthology/internal/items"
+	"anthology/internal/metrics"
 	"anthology/internal/shelves"
 )
 
@@ -64,11 +65,14 @@ func newRequestTimeoutMiddleware() func(http.Handler) http.Handler {
 }
 
 // NewRouter wires application routes and middleware using chi. db backs the
-// /ready check; a nil db reports degraded.
-func NewRouter(cfg config.Config, svc *items.Service, catalogSvc *catalog.Service, shelfSvc *shelves.Service, authService *auth.Service, googleAuth *auth.GoogleAuthenticator, db Pinger, logger *slog.Logger) http.Handler {
+// /ready check; a nil db reports degraded. m records request and domain
+// metrics; it is served on a separate listener, never by this router, and may
+// be nil.
+func NewRouter(cfg config.Config, svc *items.Service, catalogSvc *catalog.Service, shelfSvc *shelves.Service, authService *auth.Service, googleAuth *auth.GoogleAuthenticator, db Pinger, logger *slog.Logger, m *metrics.Metrics) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
+	r.Use(m.Middleware(r))
 	r.Use(middleware.Recoverer)
 	r.Use(newRequestTimeoutMiddleware())
 	r.Use(newSecurityHeadersMiddleware(cfg.Environment))
@@ -90,6 +94,7 @@ func NewRouter(cfg config.Config, svc *items.Service, catalogSvc *catalog.Servic
 	sessionHandler := NewSessionHandler(authService, cfg.Environment, logger)
 	bulkImporter := importer.NewCSVImporter(svc, catalogSvc)
 	handler := NewItemHandler(svc, catalogSvc, bulkImporter, logger)
+	handler.metrics = m
 	catalogHandler := NewCatalogHandler(catalogSvc, logger)
 	shelfHandler := NewShelfHandler(shelfSvc, logger)
 	seriesHandler := NewSeriesHandler(svc, logger)
@@ -101,6 +106,7 @@ func NewRouter(cfg config.Config, svc *items.Service, catalogSvc *catalog.Servic
 		// OAuth routes (unauthenticated)
 		if googleAuth != nil {
 			oauthHandler := NewOAuthHandler(googleAuth, authService, cfg.FrontendURL, cfg.Environment, logger)
+			oauthHandler.metrics = m
 			r.Route("/auth", func(r chi.Router) {
 				r.Get("/google", oauthHandler.InitiateGoogle)
 				r.Get("/google/callback", oauthHandler.CallbackGoogle)
