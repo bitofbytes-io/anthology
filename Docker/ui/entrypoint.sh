@@ -25,7 +25,9 @@ sed "s|__API_ORIGINS__|$api_origins|g" "$SUPPORT_DIR/security-headers.conf.templ
 if [ -n "${NG_APP_API_URL:-}" ]; then
     printf 'window.NG_APP_API_URL = "%s";\n' "$NG_APP_API_URL" > "$CONFIG_FILE"
 elif [ -f "$DEFAULT_FILE" ]; then
-    cp "$DEFAULT_FILE" "$CONFIG_FILE"
+  # Keep the pre-created writable file: its parent holds read-only bundles,
+  # and BusyBox cp may try to unlink/recreate an existing destination.
+  cat "$DEFAULT_FILE" > "$CONFIG_FILE"
 else
     printf 'window.NG_APP_API_URL = undefined;\n' > "$CONFIG_FILE"
 fi
