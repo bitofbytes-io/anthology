@@ -51,3 +51,7 @@ jobs:
         run: |
           /usr/sbin/nginx -v
           python3 scripts/test-ui-security.py --nginx /usr/sbin/nginx --web-root web/dist/web/browser --verbose
+      - name: Build UI container
+        run: docker build -f Docker/Dockerfile.ui -t anthology-ui:ci .
+      - name: Validate UI container on both bridge ports
+        run: python3 scripts/test-ui-container.py --image anthology-ui:ci --verbose

@@ -94,6 +94,12 @@ Open <http://localhost:4200>. The API applies embedded Goose migrations automati
 
 For production, use HTTPS, set `APP_ENV=production`, use a strong database password, restrict the Google API key, and provide secrets through your platform's secret manager.
 
+### UI port transition
+
+The current bridge image serves the same UI on container ports 80 and 8080. Keep existing routing and healthchecks on port 80 until the bridge is verified on every replica, then switch both to 8080 before deploying the later non-root image. This bridge keeps the existing nginx user configuration; it is not the final non-root release. Redirects remain relative to the public origin on either port. The Docker example above remains on port 80 during this stage.
+
+Validate a built bridge image with `python3 scripts/test-ui-container.py --image anthology-ui:local`. CI builds the real UI image and runs this check on both ports, including headers, routes, assets, probes and runtime API URL validation.
+
 ### UI response security
 
 The UI nginx server sends security headers on HTML, assets, redirects, errors and health probes. Its enforced Content Security Policy allows scripts only from the UI origin, including the local analytics bootstrap and `/umami/` proxy. Google Fonts remain allowed. Inline styles are a starter allowance for Angular component styles and style bindings; inline scripts and `eval` are blocked. Production critical CSS inlining is disabled because it generates an inline load handler. Cover images may use HTTP(S) URLs or `data:` thumbnails. Camera permission is limited to this origin for barcode scanning; microphone and geolocation are disabled.
