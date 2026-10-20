@@ -94,6 +94,14 @@ Open <http://localhost:4200>. The API applies embedded Goose migrations automati
 
 For production, use HTTPS, set `APP_ENV=production`, use a strong database password, restrict the Google API key, and provide secrets through your platform's secret manager.
 
+### UI response security
+
+The UI nginx server sends security headers on HTML, assets, redirects, errors and health probes. Its enforced Content Security Policy allows scripts only from the UI origin, including the local analytics bootstrap and `/umami/` proxy. Google Fonts remain allowed. Inline styles are a starter allowance for Angular component styles and style bindings; inline scripts and `eval` are blocked. Production critical CSS inlining is disabled because it generates an inline load handler. Cover images may use HTTP(S) URLs or `data:` thumbnails. Camera permission is limited to this origin for barcode scanning; microphone and geolocation are disabled.
+
+`NG_APP_API_URL` configures both the browser API base URL and the CSP `connect-src` origin at container startup. Use a root-relative path such as `/api` (with your reverse proxy routing it to the API), or an absolute HTTP(S) URL with a DNS/IPv4 host, optional port and path, such as `https://api.example.com:8443/api`. The CSP allows only that origin plus the UI origin, not all HTTPS destinations. Credentials, query strings, fragments, protocol-relative URLs, IPv6 literals and unsafe characters fail startup before configuration is replaced. IPv6 literals are excluded because they are not portable CSP host sources; use a DNS name for an IPv6 service. Without an override, the existing defaults remain: HTTP pages use `http://localhost:8080/api`, HTTPS pages use same-origin `/api`.
+
+All header directives live in `Docker/ui/security-headers.conf.template`. If a location adds any `add_header` of its own, include `/etc/nginx/snippets/security-headers.conf` inside that location too, because nginx otherwise stops inheriting the server headers. Validate startup URL handling with `python3 scripts/test-ui-security.py`; add `--nginx /path/to/nginx` to check nginx syntax and real 200/301/404, asset and probe responses. After a production build, `--web-root web/dist/web/browser` also rejects generated inline scripts and event handlers; pull-request CI runs this check.
+
 ### Metrics
 
 The API serves Prometheus metrics at `GET /metrics` on a separate internal listener, `METRICS_ADDR` (default `:9464`), never on the public port, so a reverse proxy routing the public port cannot expose them. Set `METRICS_ADDR=off` to disable the listener; if the address cannot be bound, the API logs an error and keeps serving without metrics. Do not publish the metrics port; scrape it over a private network. The listener exposes:

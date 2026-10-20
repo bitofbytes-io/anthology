@@ -43,3 +43,11 @@ jobs:
       - run: npm ci
         working-directory: web
       - run: make web-test web-build
+      - name: Install nginx for UI security tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends nginx
+      - name: Validate UI security headers
+        run: |
+          /usr/sbin/nginx -v
+          python3 scripts/test-ui-security.py --nginx /usr/sbin/nginx --web-root web/dist/web/browser --verbose
