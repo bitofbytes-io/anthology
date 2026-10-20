@@ -7,6 +7,7 @@ No Docker daemon, API credentials, or production services are needed.
 import argparse
 from html.parser import HTMLParser
 import os
+import re
 from pathlib import Path
 import shutil
 import socket
@@ -133,12 +134,22 @@ class EntryPointTests(unittest.TestCase):
         html = self.assets.parent
         (html / "index.html").write_text("<!doctype html><title>UI security check</title>")
         (self.assets / "example.css").write_text("body { color: black; }")
-        with socket.socket() as listener:
-            listener.bind(("127.0.0.1", 0))
-            port = listener.getsockname()[1]
         server = (ROOT / "Docker/ui/nginx.conf").read_text()
-        server = server.replace("listen 80;", f"listen 127.0.0.1:{port};")
-        server = server.replace("    listen [::]:80;\n", "")
+        declared_ports = re.findall(r"^    listen ([0-9]+);$", server, re.MULTILINE)
+        self.assertEqual(declared_ports, ["80", "8080"])
+        # Reserve both ephemeral ports together so they cannot be allocated
+        # twice; rewrite every production listener, never bind host 80/8080.
+        reservations = [socket.socket() for _ in declared_ports]
+        try:
+            for listener in reservations:
+                listener.bind(("127.0.0.1", 0))
+            ports = [listener.getsockname()[1] for listener in reservations]
+        finally:
+            for listener in reservations:
+                listener.close()
+        for original, port in zip(declared_ports, ports):
+            server = server.replace(f"listen {original};", f"listen 127.0.0.1:{port};")
+            server = server.replace(f"    listen [::]:{original};\n", "")
         server = server.replace("/usr/share/nginx/html", str(html))
         server = server.replace("/etc/nginx/snippets/security-headers.conf", str(self.headers))
         config = self.directory / "nginx.conf"
@@ -157,29 +168,32 @@ class EntryPointTests(unittest.TestCase):
             def redirect_request(self, request, fp, code, msg, headers, newurl):
                 return None
         opener = urllib.request.build_opener(NoRedirect)
-        for attempt in range(100):
-            try:
-                with socket.create_connection(("127.0.0.1", port), timeout=.1):
-                    break
-            except OSError:
-                time.sleep(.02)
-        for path, status in [("/", 200), ("/login", 200), ("/items/", 301),
-                             ("/unknown-path", 404), ("/assets/missing.css", 404),
-                             ("/assets/example.css", 200), ("/health", 200), ("/ready", 200)]:
-            with self.subTest(path=path):
+        for port in ports:
+            for attempt in range(100):
                 try:
-                    response = opener.open(f"http://127.0.0.1:{port}{path}")
-                except urllib.error.HTTPError as error:
-                    response = error
-                with response:
-                    self.assertEqual(response.status, status)
-                    self.assertEqual(response.headers["Server"], "nginx")
-                    self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
-                    self.assertEqual(response.headers["X-Frame-Options"], "DENY")
-                    self.assertEqual(response.headers["Referrer-Policy"], "strict-origin-when-cross-origin")
-                    self.assertEqual(response.headers["Permissions-Policy"], "camera=(self), microphone=(), geolocation=()")
-                    self.assertIn("connect-src 'self' https://api.example:8443;",
-                                  response.headers["Content-Security-Policy"])
+                    with socket.create_connection(("127.0.0.1", port), timeout=.1):
+                        break
+                except OSError:
+                    time.sleep(.02)
+            for path, status in [("/", 200), ("/login", 200), ("/items/?sort=title", 301),
+                                 ("/unknown-path", 404), ("/assets/missing.css", 404),
+                                 ("/assets/example.css", 200), ("/health", 200), ("/ready", 200)]:
+                with self.subTest(port=port, path=path):
+                    try:
+                        response = opener.open(f"http://127.0.0.1:{port}{path}")
+                    except urllib.error.HTTPError as error:
+                        response = error
+                    with response:
+                        self.assertEqual(response.status, status)
+                        if status == 301:
+                            self.assertEqual(response.headers["Location"], "/items?sort=title")
+                        self.assertEqual(response.headers["Server"], "nginx")
+                        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+                        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+                        self.assertEqual(response.headers["Referrer-Policy"], "strict-origin-when-cross-origin")
+                        self.assertEqual(response.headers["Permissions-Policy"], "camera=(self), microphone=(), geolocation=()")
+                        self.assertIn("connect-src 'self' https://api.example:8443;",
+                                      response.headers["Content-Security-Policy"])
 
 
 if __name__ == "__main__":
