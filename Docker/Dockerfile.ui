@@ -18,6 +18,7 @@ ARG SOURCE_URL=https://github.com/bitofbytes-io/anthology
 WORKDIR /usr/share/nginx/html
 
 COPY Docker/ui/nginx.conf /etc/nginx/conf.d/default.conf
+COPY Docker/ui/nginx-main.conf /etc/nginx/nginx.conf
 COPY Docker/ui/entrypoint.sh /entrypoint.sh
 COPY Docker/ui/runtime-api-origin.awk Docker/ui/security-headers.conf.template /etc/anthology-ui/
 
@@ -33,11 +34,17 @@ RUN set -eux; \
     if [ -f assets/runtime-config.js ]; then \
         mv assets/runtime-config.js assets/runtime-config.default.js; \
     fi; \
+    mkdir -p /etc/nginx/snippets; \
+    touch assets/runtime-config.js /etc/nginx/snippets/security-headers.conf; \
+    chown nginx:nginx assets/runtime-config.js /etc/nginx/snippets/security-headers.conf; \
+    chmod 0644 assets/runtime-config.js /etc/nginx/snippets/security-headers.conf; \
     chmod +x /entrypoint.sh
 
 ENV NG_APP_API_URL=
 
-EXPOSE 80 8080
+EXPOSE 8080
+
+USER nginx
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;"]

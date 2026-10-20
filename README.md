@@ -86,7 +86,7 @@ docker run -d --name anthology-api --network anthology \
 
 docker run -d --name anthology-ui --network anthology \
   -e NG_APP_API_URL=http://localhost:8080/api \
-  -p 4200:80 \
+  -p 4200:8080 \
   anthology-ui:local
 ```
 
@@ -94,11 +94,15 @@ Open <http://localhost:4200>. The API applies embedded Goose migrations automati
 
 For production, use HTTPS, set `APP_ENV=production`, use a strong database password, restrict the Google API key, and provide secrets through your platform's secret manager.
 
-### UI port transition
+### UI container runtime
 
-The current bridge image serves the same UI on container ports 80 and 8080. Keep existing routing and healthchecks on port 80 until the bridge is verified on every replica, then switch both to 8080 before deploying the later non-root image. This bridge keeps the existing nginx user configuration; it is not the final non-root release. Redirects remain relative to the public origin on either port. The Docker example above remains on port 80 during this stage.
+The UI starts as the unprivileged `nginx` user and listens only on container port 8080. Route traffic and healthchecks to 8080; redirects remain relative to the public origin. The unchanged upstream nginx base still advertises port 80 in its image metadata, but the UI does not listen there. Publish 8080 explicitly, as in the Docker example above.
 
-Validate a built bridge image with `python3 scripts/test-ui-container.py --image anthology-ui:local`. CI builds the real UI image and runs this check on both ports, including headers, routes, assets, probes and runtime API URL validation.
+Only `assets/runtime-config.js` and `/etc/nginx/snippets/security-headers.conf` are writable application configuration files. Static bundles, default configuration and their directories remain owned by root. nginx writes its PID and request buffers under `/tmp`, and sends logs to stdout/stderr. Startup needs no root process or added capabilities.
+
+Deployments upgrading from an older port-80 image must first deploy the bridge release that serves both ports, then switch healthchecks and routing to 8080 before using this image. Roll back to that bridge with healthchecks and routing still on 8080.
+
+Validate a built image with `python3 scripts/test-ui-container.py --image anthology-ui:local`. CI builds the real UI image and checks its running PID 1 UID, file permissions, absence of a port-80 listener, and port-8080 headers, routes, assets, probes and runtime API URL validation.
 
 ### UI response security
 

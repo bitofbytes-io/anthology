@@ -94,9 +94,16 @@ class EntryPointTests(unittest.TestCase):
 
     def test_restart_without_override_restores_default(self):
         self.assertEqual(self.run_entrypoint("https://api.example/api").returncode, 0)
-        self.assertEqual(self.run_entrypoint("").returncode, 0)
+        config = self.assets / "runtime-config.js"
+        inode = config.stat().st_ino
+        self.assets.chmod(0o555)
+        try:
+            self.assertEqual(self.run_entrypoint("").returncode, 0)
+            self.assertEqual(config.stat().st_ino, inode)
+        finally:
+            self.assets.chmod(0o755)
         self.assertNotIn("api.example", self.headers.read_text())
-        self.assertEqual((self.assets / "runtime-config.js").read_bytes(), self.default.read_bytes())
+        self.assertEqual(config.read_bytes(), self.default.read_bytes())
 
     def test_baseline_headers_and_strict_scripts(self):
         self.assertEqual(self.run_entrypoint("/api").returncode, 0)
@@ -136,9 +143,9 @@ class EntryPointTests(unittest.TestCase):
         (self.assets / "example.css").write_text("body { color: black; }")
         server = (ROOT / "Docker/ui/nginx.conf").read_text()
         declared_ports = re.findall(r"^    listen ([0-9]+);$", server, re.MULTILINE)
-        self.assertEqual(declared_ports, ["80", "8080"])
-        # Reserve both ephemeral ports together so they cannot be allocated
-        # twice; rewrite every production listener, never bind host 80/8080.
+        self.assertEqual(declared_ports, ["8080"])
+        # Rewrite every production listener to an ephemeral loopback port;
+        # never bind the host's application port.
         reservations = [socket.socket() for _ in declared_ports]
         try:
             for listener in reservations:
@@ -153,8 +160,13 @@ class EntryPointTests(unittest.TestCase):
         server = server.replace("/usr/share/nginx/html", str(html))
         server = server.replace("/etc/nginx/snippets/security-headers.conf", str(self.headers))
         config = self.directory / "nginx.conf"
-        config.write_text(f'pid "{self.directory}/nginx.pid";\nerror_log stderr;\n'
-                          f'events {{}}\nhttp {{ access_log off; {server} }}\n')
+        mime_types = self.directory / "mime.types"
+        mime_types.write_text("types { text/html html; text/css css; }\n")
+        main = (ROOT / "Docker/ui/nginx-main.conf").read_text()
+        main = main.replace("/tmp/", str(self.directory) + "/")
+        main = main.replace("/etc/nginx/mime.types", str(mime_types))
+        main = main.replace("include /etc/nginx/conf.d/*.conf;", server)
+        config.write_text(main)
         command = [args.nginx, "-p", str(self.directory), "-c", str(config)]
         subprocess.run(command + ["-t"], check=True, capture_output=True)
         log = (self.directory / "nginx.log").open("w")
