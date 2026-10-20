@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Weekly dependency updates for the Go API, Angular UI, Dockerfiles, and GitHub Actions. Replaces Dependabot.",
-  "extends": ["config:recommended"],
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
   "schedule": ["* * * * 4"],
   "packageRules": [
     {
