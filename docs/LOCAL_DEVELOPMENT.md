@@ -9,6 +9,27 @@ This guide walks through setting up Anthology for local development with full OA
 - Node.js 24+ (for Angular frontend)
 - Google Cloud account
 
+## Formatting and lint
+
+Install the [golangci-lint v2.11.4 release](https://github.com/golangci/golangci-lint/releases/tag/v2.11.4) for your platform and put `golangci-lint` on `PATH`. The required version is recorded in `.golangci-lint-version`; `make api-lint` rejects other versions, and CI installs that same pin.
+
+```bash
+# Check the API without installing frontend dependencies.
+make api-lint
+
+# Apply the configured gofmt and goimports formatting, then check again.
+golangci-lint fmt
+make api-lint
+
+# Check both Go and the installed Angular workspace.
+make lint
+
+# Enable the repository's pre-commit hook.
+git config core.hooksPath githooks
+```
+
+The hook runs `make api-lint` before Angular lint. `.golangci.yml` explicitly enables errcheck, govet, staticcheck, gosec, bodyclose, sqlclosecheck, rowserrcheck and errorlint, plus the existing ineffassign and unused checks. Formatting is checked without rewriting files during lint. Keep any false-positive suppression at the specific line with a reason; do not exclude whole files or test suites.
+
 ## Database Setup
 
 Create the local database:

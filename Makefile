@@ -2,6 +2,7 @@
 
 BIN_DIR ?= bin
 WEB_DIR ?= web
+GOLANGCI_LINT_VERSION := $(shell cat .golangci-lint-version)
 
 PORT ?= 8080
 ALLOWED_ORIGINS ?= http://localhost:4200,http://localhost:8080
@@ -68,8 +69,11 @@ run: api-run ## Alias for api-run to match common tooling expectations.
 api-test: ## Execute all Go unit tests.
 	GOOGLE_BOOKS_API_KEY=$(GOOGLE_BOOKS_API_KEY) go test ./...
 
-api-lint: ## Run Go lint checks (golangci-lint).
-	golangci-lint run ./...
+api-lint: ## Check Go formatting and lint with the CI-pinned golangci-lint version.
+	@command -v golangci-lint >/dev/null 2>&1 || { echo "Install golangci-lint v$(GOLANGCI_LINT_VERSION); see docs/LOCAL_DEVELOPMENT.md." >&2; exit 1; }
+	@test "$$(golangci-lint version --short)" = "$(GOLANGCI_LINT_VERSION)" || { echo "golangci-lint v$(GOLANGCI_LINT_VERSION) is required to match CI." >&2; exit 1; }
+	golangci-lint config verify --config .golangci.yml
+	golangci-lint run --config .golangci.yml ./...
 
 api-build: ## Compile the Go API into ./bin/anthology.
 	mkdir -p $(BIN_DIR)

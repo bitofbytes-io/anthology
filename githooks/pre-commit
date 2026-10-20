@@ -5,13 +5,8 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 run_go_lint() {
-  if ! command -v golangci-lint >/dev/null 2>&1; then
-    echo "golangci-lint is required for commits. Install from https://golangci-lint.run/usage/install/" >&2
-    exit 1
-  fi
-
-  echo "→ Running golangci-lint"
-  golangci-lint run ./...
+  echo "→ Running Go formatting and lint checks"
+  make api-lint
 }
 
 run_ui_lint() {

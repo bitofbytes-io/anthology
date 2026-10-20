@@ -3,6 +3,7 @@ package items
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -120,7 +121,7 @@ func (r *PostgresRepository) Create(ctx context.Context, item Item) (Item, error
 func (r *PostgresRepository) Get(ctx context.Context, id uuid.UUID, ownerID uuid.UUID) (Item, error) {
 	var row itemRow
 	if err := r.db.GetContext(ctx, &row, baseSelect+" WHERE i.id = $1 AND i.owner_id = $2", id, ownerID); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return Item{}, ErrNotFound
 		}
 		return Item{}, fmt.Errorf("get item: %w", err)
@@ -251,7 +252,7 @@ LIMIT 1`
 
 	var row itemRow
 	if err := r.db.GetContext(ctx, &row, query, ownerID, pq.Array(keys)); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return Item{}, ErrNotFound
 		}
 		return Item{}, fmt.Errorf("find item by isbn: %w", err)

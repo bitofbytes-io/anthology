@@ -13,9 +13,9 @@ func TestInMemoryRepositoryUpdateRequiresOwner(t *testing.T) {
 	ctx := context.Background()
 
 	item := Item{
-		ID:      uuid.New(),
-		OwnerID: testOwnerID,
-		Title:   "Original",
+		ID:       uuid.New(),
+		OwnerID:  testOwnerID,
+		Title:    "Original",
 		ItemType: ItemTypeBook,
 	}
 

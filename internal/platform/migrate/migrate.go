@@ -102,7 +102,7 @@ func splitTableName(name string) (string, string) {
 }
 
 func insertVersion(ctx context.Context, db *sql.DB, version int64) error {
-	query := fmt.Sprintf(`INSERT INTO %s (version_id, is_applied) VALUES ($1, TRUE)`, goose.TableName())
+	query := fmt.Sprintf(`INSERT INTO %s (version_id, is_applied) VALUES ($1, TRUE)`, goose.TableName()) // #nosec G201 -- Goose's table name is library-owned (never request/config input here); the version value is bound separately.
 	_, err := db.ExecContext(ctx, query, version)
 	return err
 }

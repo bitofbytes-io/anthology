@@ -2,6 +2,7 @@ package items
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"slices"
 	"testing"
@@ -146,7 +147,7 @@ func TestPostgresOwnerLockWaitersLeaveTheirPoolFree(t *testing.T) {
 	}
 	var locks int
 	if err := holderDB.Get(&locks, `SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND classid = $1::bigint::oid AND objid = $2::bigint::oid AND objsubid = 2`,
-		int64(uint32(itemInsertLockClass)), int64(uint32(ownerLockKey(busy)))); err != nil {
+		int64(itemInsertLockClass), int64(binary.BigEndian.Uint32(busy[:4]))); err != nil {
 		t.Fatal(err)
 	}
 	if locks != 0 {
