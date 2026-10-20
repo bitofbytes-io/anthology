@@ -19,6 +19,7 @@ WORKDIR /usr/share/nginx/html
 
 COPY Docker/ui/nginx.conf /etc/nginx/conf.d/default.conf
 COPY Docker/ui/entrypoint.sh /entrypoint.sh
+COPY Docker/ui/runtime-api-origin.awk Docker/ui/security-headers.conf.template /etc/anthology-ui/
 
 COPY --from=build /web/dist/web/browser ./
 

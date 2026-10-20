@@ -43,3 +43,4 @@ jobs:
       - run: npm ci
         working-directory: web
       - run: make web-test web-build
+      - run: python3 scripts/test-ui-security.py --web-root web/dist/web/browser
