@@ -27,6 +27,8 @@ docker build -f Docker/Dockerfile.api -t anthology-api:local .
 docker build -f Docker/Dockerfile.ui -t anthology-ui:local .
 ```
 
+`.dockerignore` excludes Git metadata (including worktree pointer files), saved auth sessions, local configuration and browser/agent output from both build contexts. Run `python3 scripts/test-docker-context.py --verbose` to verify the exclusions using only synthetic files and Docker's actual context export. CI runs this check and builds both production images to ensure their required inputs remain available.
+
 ## Configure the API
 
 Create an untracked `anthology.env` file:

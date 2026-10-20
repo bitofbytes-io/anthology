@@ -13,3 +13,13 @@ web/.DS_Store
 .vscode/
 .idea/
 .DS_Store
+
+# Repository metadata, local credentials and agent/browser artifacts
+.git
+.auth/
+local.mk
+.local/
+.worktree.json
+.playwright-cli/
+output/
+.gemini-clipboard
