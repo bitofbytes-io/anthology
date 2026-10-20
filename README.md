@@ -140,6 +140,8 @@ make web-test
 make lint
 ```
 
+Go checks use golangci-lint v2.11.4, pinned in `.golangci-lint-version`. `make api-lint`, CI and the pre-commit hook share the same version and `.golangci.yml` configuration, including gofmt/goimports checks, security checks, SQL/HTTP resource handling and wrapped-error checks. See [local lint setup](docs/LOCAL_DEVELOPMENT.md#formatting-and-lint) for installation and formatting commands.
+
 Frontend-specific development notes live in [`web/README.md`](web/README.md). Architecture documentation is under [`docs/architecture`](docs/architecture).
 
 ## License

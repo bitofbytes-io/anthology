@@ -22,4 +22,3 @@ func TestMapCategoriesToGenreReturnsReferenceOtherWhenMatched(t *testing.T) {
 		t.Fatalf("expected %q, got %q", genreReferenceOther, got)
 	}
 }
-

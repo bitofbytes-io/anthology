@@ -32,7 +32,7 @@ type Config struct {
 }
 
 // Load reads configuration from environment variables, supporting secret-file fallbacks and sensible defaults for local development.
-// 
+//
 // It validates and returns a Config populated from environment values (including parsing CSV lists and determining the HTTP port).
 // Load enforces APP_ENV to be either "development" or "production", requires DATABASE_URL and GOOGLE_BOOKS_API_KEY, requires Google OAuth
 // client ID and secret, and requires at least one of AUTH_GOOGLE_ALLOWED_DOMAINS or AUTH_GOOGLE_ALLOWED_EMAILS. It also sanitizes and
@@ -237,7 +237,7 @@ func getEnvOrFile(key, defaultPath string) (string, error) {
 }
 
 func readSecret(path, name string) (string, error) {
-	contents, err := os.ReadFile(path)
+	contents, err := os.ReadFile(path) // #nosec G304 G703 -- Path comes only from operator-controlled *_FILE configuration or fixed secret defaults, never an HTTP request.
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", nil

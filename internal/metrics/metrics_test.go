@@ -197,7 +197,8 @@ func TestStartServesOnlyMetrics(t *testing.T) {
 	if err := srv.Shutdown(t.Context()); err != nil {
 		t.Fatalf("Shutdown: %v", err)
 	}
-	if _, err := http.Get(base + "/metrics"); err == nil {
+	if resp, err := http.Get(base + "/metrics"); err == nil {
+		_ = resp.Body.Close()
 		t.Fatal("metrics listener still serving after Shutdown")
 	}
 }

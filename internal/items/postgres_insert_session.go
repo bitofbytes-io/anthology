@@ -50,7 +50,7 @@ func waitForOwnerLock[T any](ctx context.Context, attempt func() (T, bool, error
 		if err != nil || acquired {
 			return result, err
 		}
-		timer := time.NewTimer(delay/2 + rand.N(delay/2+1))
+		timer := time.NewTimer(delay/2 + rand.N(delay/2+1)) // #nosec G404 -- Jitter only spreads lock retries; it is not a token or security decision.
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -65,7 +65,7 @@ func waitForOwnerLock[T any](ctx context.Context, attempt func() (T, bool, error
 // ownerLockKey derives the second advisory lock key from the owner ID. Two
 // owners may share a key; that only makes their inserts wait for each other.
 func ownerLockKey(ownerID uuid.UUID) int32 {
-	return int32(binary.BigEndian.Uint32(ownerID[:4]))
+	return int32(binary.BigEndian.Uint32(ownerID[:4])) // #nosec G115 -- Preserve all 32 bits as a signed PostgreSQL advisory key, including across rolling upgrades.
 }
 
 // saveOutcomeErr classifies a failed write. PostgreSQL reporting an ordinary
