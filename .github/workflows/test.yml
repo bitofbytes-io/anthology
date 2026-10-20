@@ -29,6 +29,10 @@ jobs:
           go-version-file: go.mod
       - run: make api-test api-build
       - run: go test -race ./internal/items ./internal/shelves ./internal/exporter
+      - name: Verify private files are excluded from Docker contexts
+        run: python3 scripts/test-docker-context.py --verbose
+      - name: Build API container
+        run: docker build -f Docker/Dockerfile.api -t anthology-api:ci .
   ui-test:
     runs-on: ubuntu-latest
     steps:
