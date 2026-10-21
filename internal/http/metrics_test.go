@@ -85,7 +85,7 @@ func TestOAuthCallbackFailureIsCounted(t *testing.T) {
 	// No state cookie: the callback fails before reaching Google.
 	handler.CallbackGoogle(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/auth/google/callback?state=x&code=y", nil))
 
-	if body := scrapeMetrics(t, m); !strings.Contains(body, `anthology_oauth_failures_total{provider="google"} 1`) {
+	if body := scrapeMetrics(t, m); !strings.Contains(body, `anthology_oauth_failures_total{provider="google",reason="state"} 1`) {
 		t.Fatalf("expected one Google OAuth failure, got:\n%s", body)
 	}
 }

@@ -25,6 +25,15 @@ const UnmatchedRoute = "unmatched"
 // OAuth providers, used as the provider label.
 const ProviderGoogle = "google"
 
+// OAuth failure reasons are bounded independently of provider error text.
+const (
+	OAuthState          = "state"
+	OAuthProviderDenied = "provider_denied"
+	OAuthExchange       = "exchange"
+	OAuthNotAllowed     = "not_allowed"
+	OAuthInternal       = "internal"
+)
+
 // Upload results, used as the result label of anthology_uploads_total.
 const (
 	UploadSuccess  = "success"
@@ -87,8 +96,8 @@ func New() *Metrics {
 		}, []string{"method", "route", "status"}),
 		oauthFailures: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "anthology_oauth_failures_total",
-			Help: "OAuth sign-in attempts that did not end in a session, by provider.",
-		}, []string{"provider"}),
+			Help: "OAuth sign-in attempts that did not end in a session, by provider and reason.",
+		}, []string{"provider", "reason"}),
 		uploads: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "anthology_uploads_total",
 			Help: "CSV import uploads, by result.",
@@ -167,11 +176,19 @@ func (m *Metrics) instrument(routes chi.Routes, next http.Handler) http.Handler 
 }
 
 // OAuthFailure counts a sign-in attempt through provider that failed.
-func (m *Metrics) OAuthFailure(provider string) {
+func (m *Metrics) OAuthFailure(provider, reason string) {
 	if m == nil {
 		return
 	}
-	m.oauthFailures.WithLabelValues(provider).Inc()
+	if provider != ProviderGoogle {
+		provider = "unknown"
+	}
+	switch reason {
+	case OAuthState, OAuthProviderDenied, OAuthExchange, OAuthNotAllowed, OAuthInternal:
+	default:
+		reason = OAuthInternal
+	}
+	m.oauthFailures.WithLabelValues(provider, reason).Inc()
 }
 
 // Upload counts a CSV upload with the given result.

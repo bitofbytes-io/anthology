@@ -3,6 +3,8 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -70,13 +72,18 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("APP_ENV must be one of development or production")
 	}
 
+	metricsAddr, err := parseMetricsAddr(os.Getenv("METRICS_ADDR"))
+	if err != nil {
+		return Config{}, err
+	}
+
 	cfg := Config{
 		Environment:       environment,
 		DatabaseURL:       databaseURL,
 		LogLevel:          strings.ToLower(getEnv("LOG_LEVEL", "info")),
 		AllowedOrigins:    parseCSV(getEnv("ALLOWED_ORIGINS", "http://localhost:4200,http://localhost:8080")),
 		GoogleBooksAPIKey: strings.TrimSpace(googleBooksAPIKey),
-		MetricsAddr:       parseMetricsAddr(os.Getenv("METRICS_ADDR")),
+		MetricsAddr:       metricsAddr,
 
 		// Google OAuth
 		GoogleClientID:       trimmedGoogleClientID,
@@ -134,15 +141,25 @@ const DefaultMetricsAddr = ":9464"
 
 // parseMetricsAddr returns the metrics listener address for a METRICS_ADDR
 // value: DefaultMetricsAddr when unset, "" (disabled) for "off".
-func parseMetricsAddr(value string) string {
+func parseMetricsAddr(value string) (string, error) {
 	value = strings.TrimSpace(value)
 	switch {
 	case value == "":
-		return DefaultMetricsAddr
+		return DefaultMetricsAddr, nil
 	case strings.EqualFold(value, "off"):
-		return ""
+		return "", nil
 	default:
-		return value
+		host, port, err := net.SplitHostPort(value)
+		if err != nil {
+			return "", fmt.Errorf("METRICS_ADDR must be a host:port address: %w", err)
+		}
+		if !validMetricsHost(host, strings.HasPrefix(value, "[")) {
+			return "", fmt.Errorf("METRICS_ADDR host must be a valid IP address or hostname")
+		}
+		if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+			return "", fmt.Errorf("METRICS_ADDR port must be numeric and between 0 and 65535")
+		}
+		return value, nil
 	}
 }
 
@@ -250,4 +267,50 @@ func readSecret(path, name string) (string, error) {
 		return "", fmt.Errorf("config: %s (%s) is empty", name, path)
 	}
 	return value, nil
+}
+
+// validMetricsHost accepts address literals and DNS hostname syntax without
+// resolving names. Brackets are reserved for IPv6; a zone is an interface name
+// or numeric index. Reject malformed numeric addresses rather than treating
+// them as DNS names that will fail later in the nonfatal listener startup.
+func validMetricsHost(host string, bracketed bool) bool {
+	alnum := func(c byte) bool {
+		return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+	}
+	if bracketed {
+		ip, err := netip.ParseAddr(host)
+		if err != nil || !ip.Is6() {
+			return false
+		}
+		for _, c := range []byte(ip.Zone()) {
+			if !alnum(c) && c != '.' && c != '_' && c != '-' {
+				return false
+			}
+		}
+		return true
+	}
+	if host == "" {
+		return true
+	}
+	if ip, err := netip.ParseAddr(host); err == nil {
+		return ip.Is4()
+	}
+	if strings.Contains(host, ".") && strings.Trim(host, "0123456789.") == "" {
+		return false
+	}
+	hostname := strings.TrimSuffix(host, ".")
+	if len(hostname) == 0 || len(hostname) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(hostname, ".") {
+		if len(label) == 0 || len(label) > 63 || !alnum(label[0]) || !alnum(label[len(label)-1]) {
+			return false
+		}
+		for _, c := range []byte(label) {
+			if !alnum(c) && c != '-' {
+				return false
+			}
+		}
+	}
+	return true
 }

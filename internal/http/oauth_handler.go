@@ -94,7 +94,7 @@ func (h *OAuthHandler) InitiateGoogle(w http.ResponseWriter, r *http.Request) {
 	state, err := auth.GenerateState()
 	if err != nil {
 		h.logger.Error("failed to generate state", "error", err)
-		h.metrics.OAuthFailure(metrics.ProviderGoogle)
+		h.metrics.OAuthFailure(metrics.ProviderGoogle, metrics.OAuthInternal)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -133,7 +133,7 @@ func (h *OAuthHandler) CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 	stateCookie, err := r.Cookie(oauthStateCookieName)
 	if err != nil {
 		h.logger.Warn("oauth callback: missing state cookie")
-		h.redirectWithError(w, r, "invalid_request", "Session expired. Please try again.")
+		h.redirectWithError(w, r, metrics.OAuthState, "invalid_request", "Session expired. Please try again.")
 		return
 	}
 
@@ -145,14 +145,14 @@ func (h *OAuthHandler) CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 	stateBytes, err := base64.RawURLEncoding.DecodeString(stateParam)
 	if err != nil {
 		h.logger.Warn("oauth callback: invalid state encoding")
-		h.redirectWithError(w, r, "invalid_request", "Invalid state. Please try again.")
+		h.redirectWithError(w, r, metrics.OAuthState, "invalid_request", "Invalid state. Please try again.")
 		return
 	}
 
 	var statePayload oauthStatePayload
 	if err := json.Unmarshal(stateBytes, &statePayload); err != nil {
 		h.logger.Warn("oauth callback: invalid state JSON")
-		h.redirectWithError(w, r, "invalid_request", "Invalid state. Please try again.")
+		h.redirectWithError(w, r, metrics.OAuthState, "invalid_request", "Invalid state. Please try again.")
 		return
 	}
 
@@ -163,7 +163,7 @@ func (h *OAuthHandler) CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 
 	if subtle.ConstantTimeCompare([]byte(statePayload.State), []byte(expectedState)) != 1 {
 		h.logger.Warn("oauth callback: state mismatch")
-		h.redirectWithError(w, r, "invalid_request", "Invalid state. Please try again.")
+		h.redirectWithError(w, r, metrics.OAuthState, "invalid_request", "Invalid state. Please try again.")
 		return
 	}
 
@@ -180,7 +180,7 @@ func (h *OAuthHandler) CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 	// Check for OAuth error from Google
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
 		h.logger.Warn("oauth callback: provider error", "error", errParam)
-		h.redirectWithError(w, r, errParam, r.URL.Query().Get("error_description"))
+		h.redirectWithError(w, r, metrics.OAuthProviderDenied, errParam, r.URL.Query().Get("error_description"))
 		return
 	}
 
@@ -188,28 +188,28 @@ func (h *OAuthHandler) CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		h.logger.Warn("oauth callback: missing authorization code")
-		h.redirectWithError(w, r, "invalid_request", "Missing authorization code.")
+		h.redirectWithError(w, r, metrics.OAuthState, "invalid_request", "Missing authorization code.")
 		return
 	}
 
 	claims, err := h.google.Exchange(r.Context(), code)
 	if err != nil {
 		h.logger.Error("oauth callback: exchange failed", "error", err)
-		h.redirectWithError(w, r, "exchange_error", "Failed to complete authentication.")
+		h.redirectWithError(w, r, metrics.OAuthExchange, "exchange_error", "Failed to complete authentication.")
 		return
 	}
 
 	// Verify email is verified
 	if !claims.EmailVerified {
 		h.logger.Warn("oauth callback: email not verified", "email", claims.Email)
-		h.redirectWithError(w, r, "email_not_verified", "Please verify your Google email address.")
+		h.redirectWithError(w, r, metrics.OAuthNotAllowed, "email_not_verified", "Please verify your Google email address.")
 		return
 	}
 
 	// Check allowlist
 	if !h.google.IsAllowed(claims) {
 		h.logger.Warn("oauth callback: email not allowed", "email", claims.Email)
-		h.redirectWithError(w, r, "access_denied", "Your account is not authorized to access this application.")
+		h.redirectWithError(w, r, metrics.OAuthNotAllowed, "access_denied", "Your account is not authorized to access this application.")
 		return
 	}
 
@@ -217,7 +217,7 @@ func (h *OAuthHandler) CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 	user, err := h.authService.CreateOrUpdateUser(r.Context(), claims)
 	if err != nil {
 		h.logger.Error("oauth callback: user creation failed", "error", err)
-		h.redirectWithError(w, r, "internal_error", "Failed to create user account.")
+		h.redirectWithError(w, r, metrics.OAuthInternal, "internal_error", "Failed to create user account.")
 		return
 	}
 
@@ -225,7 +225,7 @@ func (h *OAuthHandler) CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 	token, err := h.authService.CreateSession(r.Context(), user.ID, r.UserAgent(), clientIPFromRequest(r))
 	if err != nil {
 		h.logger.Error("oauth callback: session creation failed", "error", err)
-		h.redirectWithError(w, r, "internal_error", "Failed to create session.")
+		h.redirectWithError(w, r, metrics.OAuthInternal, "internal_error", "Failed to create session.")
 		return
 	}
 
@@ -248,8 +248,8 @@ func (h *OAuthHandler) CallbackGoogle(w http.ResponseWriter, r *http.Request) {
 
 // redirectWithError counts a failed Google sign-in and redirects to the login
 // page with error details.
-func (h *OAuthHandler) redirectWithError(w http.ResponseWriter, r *http.Request, code, message string) {
-	h.metrics.OAuthFailure(metrics.ProviderGoogle)
+func (h *OAuthHandler) redirectWithError(w http.ResponseWriter, r *http.Request, reason, code, message string) {
+	h.metrics.OAuthFailure(metrics.ProviderGoogle, reason)
 	target := h.frontendURL + "/login?error=" + url.QueryEscape(code)
 	if message != "" {
 		target += "&message=" + url.QueryEscape(message)

@@ -168,6 +168,14 @@ func TestLoadMetricsAddr(t *testing.T) {
 		{name: "custom address", value: "127.0.0.1:9500", want: "127.0.0.1:9500"},
 		{name: "off disables", value: "off", want: ""},
 		{name: "off is case-insensitive", value: " OFF ", want: ""},
+		{name: "mixed case off", value: "oFf", want: ""},
+		{name: "blank default", value: "  ", want: ":9464"},
+		{name: "trim address", value: " 127.0.0.1:9464 ", want: "127.0.0.1:9464"},
+		{name: "empty host", value: ":0", want: ":0"},
+		{name: "maximum port", value: ":65535", want: ":65535"},
+		{name: "IPv6", value: "[::1]:9464", want: "[::1]:9464"},
+		{name: "IPv6 zone", value: "[fe80::1%lo0]:9464", want: "[fe80::1%lo0]:9464"},
+		{name: "no DNS lookup", value: "does-not-resolve.invalid:9464", want: "does-not-resolve.invalid:9464"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -316,6 +324,56 @@ func TestLoadAllowlistConstrainsGoogleAccounts(t *testing.T) {
 				if got := allowlist.AllowsEmail(claims.Email); got != a.wantEmail {
 					t.Errorf("%s: AllowsEmail(%q) = %v, want %v", a.name, claims.Email, got, a.wantEmail)
 				}
+			}
+		})
+	}
+}
+
+func TestLoadRejectsMalformedMetricsAddr(t *testing.T) {
+	for _, value := range []string{"localhost", "9464", ":", ":http", ":-1", ":+1", ":65536", ":999999999999999999999", "::1:9464", "[::1]", "[::1:9464", "http://localhost:9464", "localhost:94 64"} {
+		t.Run(value, func(t *testing.T) {
+			setAllowlistTestEnv(t, "example.com", "")
+			t.Setenv("METRICS_ADDR", value)
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), "METRICS_ADDR") {
+				t.Fatalf("Load() error = %v, want METRICS_ADDR validation error", err)
+			}
+		})
+	}
+}
+
+func TestMetricsAddrHostSyntax(t *testing.T) {
+	setAllowlistTestEnv(t, "example.com", "")
+	longest := strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." + strings.Repeat("c", 63) + "." + strings.Repeat("d", 61)
+	valid := []string{
+		":9464", "localhost:9464", "anthology-1.internal:9464", "UNRESOLVED.invalid.:9464",
+		"1anthology.internal:9464", "xn--caf-dma.invalid:9464", "127.0.0.1:9464", "0.0.0.0:9464", "255.255.255.255:9464",
+		"[::]:9464", "[2001:db8::1]:9464", "[::ffff:192.0.2.1]:9464", "[fe80::1%lo0]:9464",
+		"[fe80::1%12]:9464", "[fe80::1%eth0.1]:9464", "[fe80::1%en_test-0]:9464",
+		longest + ":9464", longest + ".:9464",
+	}
+	invalid := []string{
+		"bad host:9464", "foo/bar:9464", "999.999.999.999:9464", "256.1.1.1:9464", "127.000.0.1:9464",
+		"127.1:9464", "127.0.0.1.:9464", "host\tname:9464", "host\nname:9464", "foo\\bar:9464",
+		"user@host:9464", "host_name:9464", "-host:9464", "host-:9464", "host..name:9464", ".host:9464", "host..:9464", ".:9464",
+		"[localhost]:9464", "[127.0.0.1]:9464", "[]:9464", "[gggg::1]:9464", "[::ffff:999.1.1.1]:9464",
+		"[fe80::1%]:9464", "[fe80::1%bad zone]:9464", "[fe80::1%bad/zone]:9464", "[fe80::1%bad%zone]:9464",
+		"127.0.0.1%lo0:9464", "café.invalid:9464", strings.Repeat("a", 64) + ".invalid:9464", longest + "e:9464",
+	}
+	for _, addr := range valid {
+		t.Run("valid/"+addr, func(t *testing.T) {
+			t.Setenv("METRICS_ADDR", addr)
+			cfg, err := Load()
+			if err != nil || cfg.MetricsAddr != addr {
+				t.Fatalf("address=%q cfg=%v err=%v", addr, cfg, err)
+			}
+		})
+	}
+	for _, addr := range invalid {
+		t.Run("invalid/"+addr, func(t *testing.T) {
+			t.Setenv("METRICS_ADDR", addr)
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), "METRICS_ADDR") {
+				t.Fatalf("invalid host accepted: %q err=%v", addr, err)
 			}
 		})
 	}
