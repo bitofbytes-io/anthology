@@ -124,8 +124,8 @@ func TestHandlerExposesDomainRuntimeAndDBMetrics(t *testing.T) {
 	db.SetMaxOpenConns(10)
 	m.RegisterDB(db, "anthology")
 
-	m.OAuthFailure(ProviderGoogle)
-	m.OAuthFailure(ProviderGoogle)
+	m.OAuthFailure(ProviderGoogle, OAuthExchange)
+	m.OAuthFailure(ProviderGoogle, OAuthExchange)
 	m.Upload(UploadSuccess)
 	m.Upload(UploadTooLarge)
 	m.Job(JobSessionCleanup, JobSuccess)
@@ -133,7 +133,7 @@ func TestHandlerExposesDomainRuntimeAndDBMetrics(t *testing.T) {
 
 	body := scrape(t, m)
 	assertContains(t, body,
-		`anthology_oauth_failures_total{provider="google"} 2`,
+		`anthology_oauth_failures_total{provider="google",reason="exchange"} 2`,
 		`anthology_uploads_total{result="success"} 1`,
 		`anthology_uploads_total{result="too_large"} 1`,
 		`anthology_jobs_total{job="session_cleanup",result="success"} 1`,
@@ -148,7 +148,7 @@ func TestHandlerExposesDomainRuntimeAndDBMetrics(t *testing.T) {
 
 func TestNilMetricsIsNoOp(t *testing.T) {
 	var m *Metrics
-	m.OAuthFailure(ProviderGoogle)
+	m.OAuthFailure(ProviderGoogle, OAuthExchange)
 	m.Upload(UploadSuccess)
 	m.Job(JobSessionCleanup, JobSuccess)
 	m.RegisterDB(nil, "anthology")
@@ -204,8 +204,16 @@ func TestStartServesOnlyMetrics(t *testing.T) {
 }
 
 func TestStartDisabledOrUnbindableReturnsNil(t *testing.T) {
-	if srv := Start("", New().Handler(), discardLogger()); srv != nil {
-		t.Fatal("Start with empty addr should disable the listener")
+	for _, addr := range []string{"", "  ", "off", " OFF ", "oFf"} {
+		var logs strings.Builder
+		logger := slog.New(slog.NewTextHandler(&logs, nil))
+		if srv := Start(addr, New().Handler(), logger); srv != nil {
+			_ = srv.Shutdown(t.Context())
+			t.Fatalf("Start(%q) should disable the listener", addr)
+		}
+		if !strings.Contains(logs.String(), "metrics listener disabled") || strings.Contains(logs.String(), "failed to bind") {
+			t.Fatalf("Start(%q) tried to bind instead of disabling: %s", addr, logs.String())
+		}
 	}
 
 	taken, err := net.Listen("tcp", "127.0.0.1:0")
@@ -221,4 +229,48 @@ func TestStartDisabledOrUnbindableReturnsNil(t *testing.T) {
 	if err := srv.Shutdown(t.Context()); err != nil {
 		t.Fatalf("nil Server Shutdown: %v", err)
 	}
+}
+
+func TestOAuthFailureLabelsAreBounded(t *testing.T) {
+	m := New()
+	for _, reason := range []string{OAuthState, OAuthProviderDenied, OAuthExchange, OAuthNotAllowed, OAuthInternal} {
+		m.OAuthFailure(ProviderGoogle, reason)
+	}
+	m.OAuthFailure("private@example.test", "raw provider error")
+	families, err := m.registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, family := range families {
+		if family.GetName() != "anthology_oauth_failures_total" {
+			continue
+		}
+		found = true
+		if len(family.Metric) != 6 {
+			t.Fatalf("got %d series, want 6", len(family.Metric))
+		}
+		for _, metric := range family.Metric {
+			if metric.GetCounter().GetValue() != 1 {
+				t.Fatalf("counter = %v, want 1", metric.GetCounter().GetValue())
+			}
+			for _, label := range metric.Label {
+				if label.GetName() == "provider" && label.GetValue() != ProviderGoogle && label.GetValue() != "unknown" {
+					t.Fatalf("unbounded provider: %q", label.GetValue())
+				}
+				if label.GetName() == "reason" {
+					switch label.GetValue() {
+					case OAuthState, OAuthProviderDenied, OAuthExchange, OAuthNotAllowed, OAuthInternal:
+					default:
+						t.Fatalf("unbounded reason: %q", label.GetValue())
+					}
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatal("missing OAuth counter")
+	}
+	assertContains(t, scrape(t, m), `anthology_oauth_failures_total{provider="unknown",reason="internal"} 1`)
+	assertNotContains(t, scrape(t, m), "private@example.test", "raw provider error")
 }

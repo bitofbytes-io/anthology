@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -24,10 +25,11 @@ func NewMux(handler http.Handler) http.Handler {
 }
 
 // Start serves handler at GET /metrics on addr, separate from the public
-// listener. An empty addr disables the listener. A bind failure is logged
+// listener. An empty addr or case-insensitive "off" disables the listener. A bind failure is logged
 // and returns nil rather than stopping the API.
 func Start(addr string, handler http.Handler, logger *slog.Logger) *Server {
-	if addr == "" {
+	addr = strings.TrimSpace(addr)
+	if addr == "" || strings.EqualFold(addr, "off") {
 		logger.Info("metrics listener disabled")
 		return nil
 	}

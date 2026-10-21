@@ -116,11 +116,11 @@ All header directives live in `Docker/ui/security-headers.conf.template`. If a l
 
 ### Metrics
 
-The API serves Prometheus metrics at `GET /metrics` on a separate internal listener, `METRICS_ADDR` (default `:9464`), never on the public port, so a reverse proxy routing the public port cannot expose them. Set `METRICS_ADDR=off` to disable the listener; if the address cannot be bound, the API logs an error and keeps serving without metrics. Do not publish the metrics port; scrape it over a private network. The listener exposes:
+The API serves Prometheus metrics at `GET /metrics` on a separate internal listener, `METRICS_ADDR` (default `:9464`), never on the public port, so a reverse proxy routing the public port cannot expose them. Set `METRICS_ADDR=off` (case-insensitive, ignoring surrounding whitespace) to disable the listener. Other values must be `host:port`, with a numeric port from 0 to 65535 and a valid IP address or DNS hostname; an empty host or bracketed IPv6 host (including interface zones) is valid. Invalid address syntax fails configuration loading without DNS lookup; if a valid address cannot be bound, the API logs an error and keeps serving without metrics. Do not publish the metrics port; scrape it over a private network. The listener exposes:
 
 - `http_requests_total` and `http_request_duration_seconds`, labelled by `method`, chi route pattern (`route`, for example `/api/items/{id}`; requests matching no route are `unmatched`), and `status`. `/health`, `/ready`, and `/metrics` are not counted.
 - `go_sql_*` connection pool stats for the Postgres pool (`db_name="anthology"`).
-- `anthology_oauth_failures_total{provider}`: Google sign-ins that did not end in a session (the only way to log in).
+- `anthology_oauth_failures_total{provider,reason}`: Google sign-ins that did not end in a session (the only way to log in). Reasons are bounded to `state` (invalid state or missing code), `provider_denied` (provider error or cancellation), `exchange` (token exchange failure), `not_allowed` (unverified or disallowed account), and `internal` (state generation, user persistence, or session failure). Alert only on server-side `reason=~"exchange|internal"`; unknown reasons normalize to `internal` and unknown providers to `unknown`. No email addresses or raw error text become labels.
 - `anthology_uploads_total{result}`: CSV import and preview uploads, by `success`, `invalid`, `too_large`, or `error`.
 - `anthology_jobs_total{job,result}`: background job runs (`session_cleanup`), by `success` or `error`.
 - Go runtime (`go_*`) and process (`process_*`) metrics.

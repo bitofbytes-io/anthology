@@ -1,6 +1,6 @@
 module anthology
 
-go 1.26.6
+go 1.26.10
 
 require (
 	github.com/coreos/go-oidc/v3 v3.18.0

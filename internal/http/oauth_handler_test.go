@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"anthology/internal/auth"
+	"anthology/internal/metrics"
 )
 
 // encodeOAuthState creates a base64-encoded JSON state payload for testing
@@ -55,11 +56,13 @@ func TestOAuthInitiateGoogleSetsStateCookieAndRedirects(t *testing.T) {
 	google := &fakeGoogleAuthenticator{allowEmail: true}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewOAuthHandler(google, nil, "http://frontend.test", "development", logger)
+	handler.metrics = metrics.New()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/google?redirectTo=/items", nil)
 	rec := httptest.NewRecorder()
 
 	handler.InitiateGoogle(rec, req)
+	assertOAuthFailureMetric(t, handler.metrics, "")
 
 	if rec.Code != http.StatusTemporaryRedirect {
 		t.Fatalf("expected status 307, got %d", rec.Code)
@@ -102,11 +105,13 @@ func TestOAuthCallbackRejectsMissingStateCookie(t *testing.T) {
 	google := &fakeGoogleAuthenticator{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewOAuthHandler(google, nil, "http://frontend.test", "development", logger)
+	handler.metrics = metrics.New()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/google/callback?state=abc", nil)
 	rec := httptest.NewRecorder()
 
 	handler.CallbackGoogle(rec, req)
+	assertOAuthFailureMetric(t, handler.metrics, "state")
 
 	if rec.Code != http.StatusTemporaryRedirect {
 		t.Fatalf("expected status 307, got %d", rec.Code)
@@ -120,6 +125,7 @@ func TestOAuthCallbackRejectsStateMismatch(t *testing.T) {
 	google := &fakeGoogleAuthenticator{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewOAuthHandler(google, nil, "http://frontend.test", "development", logger)
+	handler.metrics = metrics.New()
 
 	// Encode state with wrong value
 	encodedState := encodeOAuthState("other", "")
@@ -128,6 +134,7 @@ func TestOAuthCallbackRejectsStateMismatch(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	handler.CallbackGoogle(rec, req)
+	assertOAuthFailureMetric(t, handler.metrics, "state")
 
 	if !strings.Contains(rec.Header().Get("Location"), "/login?error=invalid_request") {
 		t.Fatalf("expected invalid_request redirect, got %q", rec.Header().Get("Location"))
@@ -138,6 +145,7 @@ func TestOAuthCallbackPropagatesProviderError(t *testing.T) {
 	google := &fakeGoogleAuthenticator{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewOAuthHandler(google, nil, "http://frontend.test", "development", logger)
+	handler.metrics = metrics.New()
 
 	encodedState := encodeOAuthState("abc", "")
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/google/callback?state="+url.QueryEscape(encodedState)+"&error=access_denied&error_description=Denied", nil)
@@ -145,6 +153,7 @@ func TestOAuthCallbackPropagatesProviderError(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	handler.CallbackGoogle(rec, req)
+	assertOAuthFailureMetric(t, handler.metrics, "provider_denied")
 
 	location := rec.Header().Get("Location")
 	if !strings.Contains(location, "/login?error=access_denied") || !strings.Contains(location, "message=Denied") {
@@ -156,6 +165,7 @@ func TestOAuthCallbackRequiresCode(t *testing.T) {
 	google := &fakeGoogleAuthenticator{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewOAuthHandler(google, nil, "http://frontend.test", "development", logger)
+	handler.metrics = metrics.New()
 
 	encodedState := encodeOAuthState("abc", "")
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/google/callback?state="+url.QueryEscape(encodedState), nil)
@@ -163,6 +173,7 @@ func TestOAuthCallbackRequiresCode(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	handler.CallbackGoogle(rec, req)
+	assertOAuthFailureMetric(t, handler.metrics, "state")
 
 	if !strings.Contains(rec.Header().Get("Location"), "/login?error=invalid_request") {
 		t.Fatalf("expected invalid_request redirect, got %q", rec.Header().Get("Location"))
@@ -173,6 +184,7 @@ func TestOAuthCallbackHandlesExchangeError(t *testing.T) {
 	google := &fakeGoogleAuthenticator{exchangeErr: errors.New("boom")}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewOAuthHandler(google, nil, "http://frontend.test", "development", logger)
+	handler.metrics = metrics.New()
 
 	encodedState := encodeOAuthState("abc", "")
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/google/callback?state="+url.QueryEscape(encodedState)+"&code=123", nil)
@@ -180,6 +192,7 @@ func TestOAuthCallbackHandlesExchangeError(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	handler.CallbackGoogle(rec, req)
+	assertOAuthFailureMetric(t, handler.metrics, "exchange")
 
 	if !strings.Contains(rec.Header().Get("Location"), "/login?error=exchange_error") {
 		t.Fatalf("expected exchange_error redirect, got %q", rec.Header().Get("Location"))
@@ -193,6 +206,7 @@ func TestOAuthCallbackRequiresVerifiedEmail(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewOAuthHandler(google, nil, "http://frontend.test", "development", logger)
+	handler.metrics = metrics.New()
 
 	encodedState := encodeOAuthState("abc", "")
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/google/callback?state="+url.QueryEscape(encodedState)+"&code=123", nil)
@@ -200,6 +214,7 @@ func TestOAuthCallbackRequiresVerifiedEmail(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	handler.CallbackGoogle(rec, req)
+	assertOAuthFailureMetric(t, handler.metrics, "not_allowed")
 
 	if !strings.Contains(rec.Header().Get("Location"), "/login?error=email_not_verified") {
 		t.Fatalf("expected email_not_verified redirect, got %q", rec.Header().Get("Location"))
@@ -213,6 +228,7 @@ func TestOAuthCallbackRejectsUnauthorizedEmail(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewOAuthHandler(google, nil, "http://frontend.test", "development", logger)
+	handler.metrics = metrics.New()
 
 	encodedState := encodeOAuthState("abc", "")
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/google/callback?state="+url.QueryEscape(encodedState)+"&code=123", nil)
@@ -220,6 +236,7 @@ func TestOAuthCallbackRejectsUnauthorizedEmail(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	handler.CallbackGoogle(rec, req)
+	assertOAuthFailureMetric(t, handler.metrics, "not_allowed")
 
 	if !strings.Contains(rec.Header().Get("Location"), "/login?error=access_denied") {
 		t.Fatalf("expected access_denied redirect, got %q", rec.Header().Get("Location"))
@@ -239,6 +256,7 @@ func TestOAuthCallbackHandlesUserCreationError(t *testing.T) {
 	authService := auth.NewService(repo, time.Hour, nil)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewOAuthHandler(google, authService, "http://frontend.test", "development", logger)
+	handler.metrics = metrics.New()
 
 	encodedState := encodeOAuthState("abc", "")
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/google/callback?state="+url.QueryEscape(encodedState)+"&code=123", nil)
@@ -246,6 +264,7 @@ func TestOAuthCallbackHandlesUserCreationError(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	handler.CallbackGoogle(rec, req)
+	assertOAuthFailureMetric(t, handler.metrics, "internal")
 
 	if !strings.Contains(rec.Header().Get("Location"), "/login?error=internal_error") {
 		t.Fatalf("expected internal_error redirect, got %q", rec.Header().Get("Location"))
@@ -268,6 +287,7 @@ func TestOAuthCallbackHandlesSessionCreationError(t *testing.T) {
 	authService := auth.NewService(repo, time.Hour, nil)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewOAuthHandler(google, authService, "http://frontend.test", "development", logger)
+	handler.metrics = metrics.New()
 
 	encodedState := encodeOAuthState("abc", "")
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/google/callback?state="+url.QueryEscape(encodedState)+"&code=123", nil)
@@ -275,6 +295,7 @@ func TestOAuthCallbackHandlesSessionCreationError(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	handler.CallbackGoogle(rec, req)
+	assertOAuthFailureMetric(t, handler.metrics, "internal")
 
 	if !strings.Contains(rec.Header().Get("Location"), "/login?error=internal_error") {
 		t.Fatalf("expected internal_error redirect, got %q", rec.Header().Get("Location"))
@@ -294,6 +315,7 @@ func TestOAuthCallbackSuccessRedirectsToFrontend(t *testing.T) {
 	authService := auth.NewService(repo, time.Hour, nil)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewOAuthHandler(google, authService, "http://frontend.test", "development", logger)
+	handler.metrics = metrics.New()
 
 	state := "state123"
 	encodedState := encodeOAuthState(state, "/items")
@@ -302,6 +324,7 @@ func TestOAuthCallbackSuccessRedirectsToFrontend(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	handler.CallbackGoogle(rec, req)
+	assertOAuthFailureMetric(t, handler.metrics, "")
 
 	if rec.Code != http.StatusTemporaryRedirect {
 		t.Fatalf("expected status 307, got %d", rec.Code)
@@ -336,6 +359,7 @@ func TestOAuthCallbackSanitizesRedirectTo(t *testing.T) {
 	authService := auth.NewService(repo, time.Hour, nil)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	handler := NewOAuthHandler(google, authService, "http://frontend.test", "development", logger)
+	handler.metrics = metrics.New()
 
 	state := "state123"
 	// The evil redirect URL should be rejected by isValidRedirectPath
@@ -345,6 +369,7 @@ func TestOAuthCallbackSanitizesRedirectTo(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	handler.CallbackGoogle(rec, req)
+	assertOAuthFailureMetric(t, handler.metrics, "")
 
 	location := rec.Header().Get("Location")
 	if location != "http://frontend.test/" {
@@ -398,6 +423,43 @@ func TestIsValidRedirectPath(t *testing.T) {
 			got := isValidRedirectPath(tt.path)
 			if got != tt.valid {
 				t.Errorf("isValidRedirectPath(%q) = %v, want %v", tt.path, got, tt.valid)
+			}
+		})
+	}
+}
+
+func assertOAuthFailureMetric(t *testing.T, m *metrics.Metrics, reason string) {
+	t.Helper()
+	var samples []string
+	for _, line := range strings.Split(scrapeMetrics(t, m), "\n") {
+		if strings.HasPrefix(line, "anthology_oauth_failures_total{") {
+			samples = append(samples, line)
+		}
+	}
+	if reason == "" {
+		if len(samples) != 0 {
+			t.Fatalf("successful login recorded failures: %v", samples)
+		}
+		return
+	}
+	want := `anthology_oauth_failures_total{provider="google",reason="` + reason + `"} 1`
+	if len(samples) != 1 || samples[0] != want {
+		t.Fatalf("OAuth failure samples = %v, want exactly %q", samples, want)
+	}
+}
+
+func TestOAuthCallbackMalformedStateMetrics(t *testing.T) {
+	for _, state := range []string{"%%%", base64.RawURLEncoding.EncodeToString([]byte("not JSON"))} {
+		t.Run(state, func(t *testing.T) {
+			handler := NewOAuthHandler(&fakeGoogleAuthenticator{}, nil, "http://frontend.test", "development", slog.New(slog.NewTextHandler(io.Discard, nil)))
+			handler.metrics = metrics.New()
+			req := httptest.NewRequest(http.MethodGet, "/api/auth/google/callback?state="+url.QueryEscape(state)+"&code=private-code", nil)
+			req.AddCookie(&http.Cookie{Name: oauthStateCookieName, Value: "expected"})
+			rec := httptest.NewRecorder()
+			handler.CallbackGoogle(rec, req)
+			assertOAuthFailureMetric(t, handler.metrics, "state")
+			if rec.Code != http.StatusTemporaryRedirect || !strings.Contains(rec.Header().Get("Location"), "/login?error=invalid_request") {
+				t.Fatalf("unexpected state failure response: %d %s", rec.Code, rec.Header().Get("Location"))
 			}
 		})
 	}
