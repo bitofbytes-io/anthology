@@ -156,16 +156,16 @@ This opens a headed browser, waits for you to confirm login (press Enter), and s
 
 Refresh it anytime by re-running the same command.
 
-## OAuth Configuration for Production (anthology.bitofobytes.io)
+## OAuth Configuration for Production (anthology.bitofbytes.io)
 
 **Authorized JavaScript origins:**
 ```
-https://anthology.bitofobytes.io
+https://anthology.bitofbytes.io
 ```
 
 **Authorized redirect URIs:**
 ```
-https://anthology.bitofobytes.io/api/auth/google/callback
+https://anthology.bitofbytes.io/api/auth/google/callback
 ```
 
 **Tip:** You can add multiple origins and redirect URIs to a single OAuth client, or create separate clients per environment for better isolation.
