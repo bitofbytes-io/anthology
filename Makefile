@@ -28,7 +28,7 @@ UI_IMAGE_REPO ?= anthology-ui
 LOG_LEVEL ?= info
 PLATFORMS ?= linux/amd64,linux/arm64/v8
 
-.PHONY: help configure-image ensure-image-tag api-run api-test api-lint api-build api-clean fmt tidy web-install web-start web-test web-lint web-lint-fix web-build auth-capture lint docker-build docker-build-api docker-build-ui docker-push docker-push-api docker-push-ui docker-publish docker-buildx docker-buildx-api docker-buildx-ui build run local clean
+.PHONY: help configure-image ensure-image-tag api-run api-test api-lint api-vuln api-build api-clean fmt tidy web-install web-start web-test web-lint web-lint-fix web-build auth-capture lint docker-build docker-build-api docker-build-ui docker-push docker-push-api docker-push-ui docker-publish docker-buildx docker-buildx-api docker-buildx-ui build run local clean
 
 help: ## Show all available targets.
 	@echo "Anthology targets"
@@ -74,6 +74,9 @@ api-lint: ## Check Go formatting and lint with the CI-pinned golangci-lint versi
 	@test "$$(golangci-lint version --short)" = "$(GOLANGCI_LINT_VERSION)" || { echo "golangci-lint v$(GOLANGCI_LINT_VERSION) is required to match CI." >&2; exit 1; }
 	golangci-lint config verify --config .golangci.yml
 	golangci-lint run --config .golangci.yml ./...
+
+api-vuln: ## Run pinned govulncheck against the Go module.
+	go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
 api-build: ## Compile the Go API into ./bin/anthology.
 	mkdir -p $(BIN_DIR)
