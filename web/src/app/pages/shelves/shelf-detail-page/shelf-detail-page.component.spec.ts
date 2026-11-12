@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withXhr } from '@angular/common/http';
 import { MatDialog } from '@angular/material/dialog';
 import { of, Subject } from 'rxjs';
 import { ShelfDetailPageComponent } from './shelf-detail-page.component';
@@ -81,7 +81,7 @@ describe('Shelf layout removal confirmation', () => {
             imports: [ShelfDetailPageComponent],
             providers: [
                 provideRouter([]),
-                provideHttpClient(),
+                provideHttpClient(withXhr()),
                 { provide: MatDialog, useValue: dialog },
                 { provide: ShelfService, useValue: service },
             ],

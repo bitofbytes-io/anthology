@@ -1,4 +1,12 @@
-import { Component, DestroyRef, computed, inject, signal, ViewChild } from '@angular/core';
+import {
+    Component,
+    DestroyRef,
+    computed,
+    inject,
+    signal,
+    ViewChild,
+    ChangeDetectionStrategy,
+} from '@angular/core';
 import { NgClass } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -53,6 +61,7 @@ type DraftSlot = Omit<LayoutSlotData, 'rowIndex' | 'colIndex'>;
         LayoutEditorComponent,
     ],
     templateUrl: './shelf-detail-page.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './shelf-detail-page.component.scss',
 })
 export class ShelfDetailPageComponent {

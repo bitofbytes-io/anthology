@@ -1,7 +1,10 @@
 <div class="cover-section" [formGroup]="form">
     <div class="cover-preview" [class.cover-preview--empty]="!form.get('coverImage')?.value">
         @if (form.get('coverImage')?.value) {
-            <img [src]="form.get('coverImage')?.value" alt="Cover preview" />
+            <img
+                [src]="$safeNavigationMigration(form.get('coverImage')?.value)"
+                alt="Cover preview"
+            />
         }
         @if (!form.get('coverImage')?.value) {
             <div class="cover-placeholder">

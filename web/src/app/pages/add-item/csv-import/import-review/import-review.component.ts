@@ -1,4 +1,4 @@
-import { Component, computed, input, output, signal } from '@angular/core';
+import { Component, computed, input, output, signal, ChangeDetectionStrategy } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatIconModule } from '@angular/material/icon';
@@ -51,6 +51,7 @@ interface ComparedItem {
     standalone: true,
     imports: [MatButtonModule, MatCheckboxModule, MatIconModule, MatRadioModule, RouterModule],
     templateUrl: './import-review.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './import-review.component.scss',
 })
 export class CsvImportReviewComponent {

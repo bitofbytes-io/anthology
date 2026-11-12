@@ -1,10 +1,10 @@
 # Anthology web client
 
-This Angular 21 application provides the catalogue interface for Anthology. It ships with [Angular Material](https://www.npmjs.com/package/@angular/material) and delivers a clean, media-focused collection view out of the box.
+This Angular 22 application provides the catalogue interface for Anthology. It ships with [Angular Material](https://www.npmjs.com/package/@angular/material) and delivers a clean, media-focused collection view out of the box.
 
 ## Prerequisites
 
-* Node.js 20+
+* Node.js 22.22.3+, 24.15.0+, or 26+
 * Angular CLI (optional, installed as a dev dependency)
 
 ## Development server

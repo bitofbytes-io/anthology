@@ -1,4 +1,4 @@
-import { Component, computed, input, output } from '@angular/core';
+import { Component, computed, input, output, ChangeDetectionStrategy } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterModule } from '@angular/router';
@@ -20,6 +20,7 @@ const STATUS_LABELS: Record<OutcomeStatus, string> = {
     standalone: true,
     imports: [MatButtonModule, MatIconModule, RouterModule],
     templateUrl: './import-result.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './import-result.component.scss',
 })
 export class CsvImportResultComponent {

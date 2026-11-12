@@ -1,4 +1,11 @@
-import { Component, DestroyRef, inject, OnInit, signal } from '@angular/core';
+import {
+    Component,
+    DestroyRef,
+    inject,
+    OnInit,
+    signal,
+    ChangeDetectionStrategy,
+} from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
@@ -12,6 +19,7 @@ import { AuthService } from '../../services/auth.service';
     standalone: true,
     imports: [RouterModule, MatButtonModule, MatCardModule, MatIconModule],
     templateUrl: './login-page.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './login-page.component.scss',
 })
 export class LoginPageComponent implements OnInit {

@@ -1,5 +1,12 @@
 import { NgClass } from '@angular/common';
-import { Component, DestroyRef, inject, OnInit, signal } from '@angular/core';
+import {
+    Component,
+    DestroyRef,
+    inject,
+    OnInit,
+    signal,
+    ChangeDetectionStrategy,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -44,6 +51,7 @@ const STATUS_CLASS_MAP: Record<SeriesStatus, string> = {
         ItemCardComponent,
     ],
     templateUrl: './series-detail-page.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './series-detail-page.component.scss',
 })
 export class SeriesDetailPageComponent implements OnInit {

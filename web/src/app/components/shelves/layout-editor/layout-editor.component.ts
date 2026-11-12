@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, ChangeDetectionStrategy } from '@angular/core';
 
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -23,6 +23,7 @@ export interface SlotSelection {
     standalone: true,
     imports: [MatButtonModule, MatCardModule, MatIconModule],
     templateUrl: './layout-editor.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './layout-editor.component.scss',
 })
 export class LayoutEditorComponent {

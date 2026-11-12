@@ -1,4 +1,12 @@
-import { Component, ElementRef, EventEmitter, Input, Output, ViewChild } from '@angular/core';
+import {
+    Component,
+    ElementRef,
+    EventEmitter,
+    Input,
+    Output,
+    ViewChild,
+    ChangeDetectionStrategy,
+} from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -16,6 +24,7 @@ import { MatInputModule } from '@angular/material/input';
         ReactiveFormsModule,
     ],
     templateUrl: './cover-section.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './cover-section.component.scss',
 })
 export class CoverSectionComponent {

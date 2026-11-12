@@ -1,30 +1,24 @@
 // @ts-check
-const { FlatCompat } = require('@eslint/eslintrc');
 const { defineConfig } = require('eslint/config');
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
+const angular = require('angular-eslint');
 
 module.exports = defineConfig([
   {
     ignores: ['dist/**', 'coverage/**', 'projects/**/*'],
   },
-  ...compat.config({
-    overrides: [
-      {
-        files: ['src/**/*.ts'],
-        extends: [
-          'plugin:@angular-eslint/recommended',
-          'plugin:@angular-eslint/template/process-inline-templates',
-        ],
-        rules: {},
-      },
-      {
-        files: ['src/**/*.html'],
-        extends: ['plugin:@angular-eslint/template/recommended'],
-        rules: {},
-      },
-    ],
-  }),
+  {
+    files: ['src/**/*.ts'],
+    extends: [angular.configs.tsRecommended],
+    processor: angular.processInlineTemplates,
+    rules: {
+      // Angular 22 defaults to OnPush; the upgrade migration pins existing components to Eager to
+      // keep v21 behaviour. Drop this override once components are moved to OnPush.
+      '@angular-eslint/prefer-on-push-component-change-detection': 'off',
+    },
+  },
+  {
+    files: ['src/**/*.html'],
+    extends: [angular.configs.templateRecommended],
+    rules: {},
+  },
 ]);

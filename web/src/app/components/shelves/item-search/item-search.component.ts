@@ -8,6 +8,7 @@ import {
     Output,
     signal,
     SimpleChanges,
+    ChangeDetectionStrategy,
 } from '@angular/core';
 
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
@@ -45,6 +46,7 @@ type ItemTypeFilter = ItemType | 'all';
         MatSelectModule,
     ],
     templateUrl: './item-search.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './item-search.component.scss',
 })
 export class ItemSearchComponent implements OnChanges {

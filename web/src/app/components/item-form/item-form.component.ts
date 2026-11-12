@@ -7,6 +7,7 @@ import {
     Output,
     SimpleChanges,
     inject,
+    ChangeDetectionStrategy,
 } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -48,6 +49,7 @@ import { GameDetailsComponent } from './game-details/game-details.component';
         ReactiveFormsModule,
     ],
     templateUrl: './item-form.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './item-form.component.scss',
 })
 export class ItemFormComponent implements OnChanges, OnInit {

@@ -1,10 +1,10 @@
 # Anthology UI deep dive
 
-Snapshot of the Angular 21 Material frontend as of this commit. Covers runtime config, routing, auth, data flows, and component/service responsibilities.
+Snapshot of the Angular 22 Material frontend as of this commit. Covers runtime config, routing, auth, data flows, and component/service responsibilities.
 
 ## Stack + conventions
 
-* Angular 21, standalone components, Signals (`signal`, `computed`) for local state.
+* Angular 22, standalone components, Signals (`signal`, `computed`) for local state.
 * Angular Material 3 theme (`web/src/styles.scss`), 2-space SCSS per component.
 * HTTP via `HttpClient`; services live in `web/src/app/services`.
 * Routing in `app.routes.ts`; guard enforces session.

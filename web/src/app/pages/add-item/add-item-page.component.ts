@@ -1,5 +1,14 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, DestroyRef, OnInit, computed, inject, signal, viewChild } from '@angular/core';
+import {
+    Component,
+    DestroyRef,
+    OnInit,
+    computed,
+    inject,
+    signal,
+    viewChild,
+    ChangeDetectionStrategy,
+} from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
@@ -61,6 +70,7 @@ interface SearchCategoryConfig {
         LookupResultsComponent,
     ],
     templateUrl: './add-item-page.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './add-item-page.component.scss',
 })
 export class AddItemPageComponent implements OnInit {

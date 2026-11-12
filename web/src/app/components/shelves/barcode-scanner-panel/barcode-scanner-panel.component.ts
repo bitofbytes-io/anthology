@@ -12,6 +12,7 @@ import {
     ViewChild,
     computed,
     effect,
+    ChangeDetectionStrategy,
 } from '@angular/core';
 
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -26,6 +27,7 @@ import {
     standalone: true,
     imports: [MatProgressSpinnerModule],
     templateUrl: './barcode-scanner-panel.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './barcode-scanner-panel.component.scss',
 })
 export class BarcodeScannerPanelComponent implements OnChanges {

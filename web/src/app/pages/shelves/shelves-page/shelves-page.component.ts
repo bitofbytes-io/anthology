@@ -1,4 +1,11 @@
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import {
+    Component,
+    DestroyRef,
+    computed,
+    inject,
+    signal,
+    ChangeDetectionStrategy,
+} from '@angular/core';
 
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
@@ -16,6 +23,7 @@ import { NotificationService } from '../../../services/notification.service';
     standalone: true,
     imports: [MatCardModule, MatIconModule, MatProgressBarModule, RouterModule, MatButtonModule],
     templateUrl: './shelves-page.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './shelves-page.component.scss',
 })
 export class ShelvesPageComponent {
