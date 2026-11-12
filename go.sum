@@ -47,6 +47,8 @@ github.com/mattn/go-sqlite3 v1.14.22 h1:2gZY6PC6kBnID23Tichd1K+Z0oS6nE/XwU+Vz/5o
 github.com/mattn/go-sqlite3 v1.14.22/go.mod h1:Uh1q+B4BYcTPb+yiD3kU8Ct7aC0hY9fxUwlHK0RXw+Y=
 github.com/mfridman/interpolate v0.0.2 h1:pnuTK7MQIxxFz1Gr+rjSIx9u7qVjf5VOoM/u6BbAxPY=
 github.com/mfridman/interpolate v0.0.2/go.mod h1:p+7uk6oE07mpE/Ik1b8EckO0O4ZXiGAfshKBWLUM9Xg=
+github.com/mfridman/interpolate v0.2.0 h1:HM9ID8p6CUxoMJX+fECOtGQ2Mu7TW/GIMPyu48nnvUg=
+github.com/mfridman/interpolate v0.2.0/go.mod h1:8SfDy95IaPNnIokZh9mvIppmc3fGl8fx+Gu7uusuO9Q=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/ncruces/go-strftime v1.0.0 h1:HMFp8mLCTPp341M/ZnA4qaf7ZlsbTc+miZjCLOFAw7w=
@@ -55,6 +57,8 @@ github.com/pressly/goose/v3 v3.27.1 h1:6uEvcprBybDmW4hcz3gYujhARhye+GoWKhEWyzD5s
 github.com/pressly/goose/v3 v3.27.1/go.mod h1:maruOxsPnIG2yHHyo8UqKWXYKFcH7Q76csUV7+7KYoM=
 github.com/pressly/goose/v3 v3.30.0 h1:hmsrzlpLLKiIxukTV1YKCfSoM/F0QZGGmJLsbXcYD/I=
 github.com/pressly/goose/v3 v3.30.0/go.mod h1:aw7C4/P6xjcOoa3Nsj9H2xGmLyIs+JgSLTUImg2KaWE=
+github.com/pressly/goose/v3 v3.30.1 h1:KO28meBdbAUIdMbTP7bl9dp1FYZGXcYWb2O7miT09lE=
+github.com/pressly/goose/v3 v3.30.1/go.mod h1:CHGwuG2acDerUaXwz2i5T18VSauXpYDiL4WxzDvcOIM=
 github.com/prometheus/client_golang v1.25.0 h1:cDtW1TcFsMi1RJc8khwCKB4VhzwV04aKqbYtNOXuiK0=
 github.com/prometheus/client_golang v1.25.0/go.mod h1:j2X/4/kaQHLPnmyEU8zjmkndo1T317VpCIQEml8LTKk=
 github.com/prometheus/client_model v0.6.3 h1:O0jaTVAYNxTHYInEPFJt5I3+sN8zqBtVMPTB1qyxiEo=
