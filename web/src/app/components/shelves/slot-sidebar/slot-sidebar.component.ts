@@ -1,4 +1,12 @@
-import { Component, EventEmitter, Input, Output, signal, ViewChild } from '@angular/core';
+import {
+    Component,
+    EventEmitter,
+    Input,
+    Output,
+    signal,
+    ViewChild,
+    ChangeDetectionStrategy,
+} from '@angular/core';
 
 import { MatCardModule } from '@angular/material/card';
 import { MatChipsModule } from '@angular/material/chips';
@@ -23,6 +31,7 @@ import { BarcodeScannerPanelComponent } from '../barcode-scanner-panel/barcode-s
         BarcodeScannerPanelComponent,
     ],
     templateUrl: './slot-sidebar.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './slot-sidebar.component.scss',
 })
 export class SlotSidebarComponent {

@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, ChangeDetectionStrategy } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 
 import { ItemForm } from '../../../models';
@@ -8,6 +8,7 @@ import { ItemForm } from '../../../models';
     standalone: true,
     imports: [MatButtonModule],
     templateUrl: './lookup-results.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './lookup-results.component.scss',
 })
 export class LookupResultsComponent {

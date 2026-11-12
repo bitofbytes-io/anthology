@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, ChangeDetectionStrategy } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, withDisabledInitialNavigation } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -10,6 +10,7 @@ import { AuthService } from '../../services/auth.service';
 @Component({
     selector: 'app-test-page',
     standalone: true,
+    changeDetection: ChangeDetectionStrategy.Eager,
     template: '<p>Test Page</p>',
 })
 class TestPageComponent {}

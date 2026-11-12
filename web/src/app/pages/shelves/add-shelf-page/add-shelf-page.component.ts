@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { Component, DestroyRef, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
@@ -29,6 +29,7 @@ import { NotificationService } from '../../../services/notification.service';
         PhotoUploadComponent,
     ],
     templateUrl: './add-shelf-page.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './add-shelf-page.component.scss',
 })
 export class AddShelfPageComponent {

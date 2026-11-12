@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, ChangeDetectionStrategy } from '@angular/core';
 import { NgClass } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -10,6 +10,7 @@ import { PlacementWithItem } from '../../../models/shelf';
     standalone: true,
     imports: [NgClass, MatIconModule, MatTooltipModule],
     templateUrl: './assigned-items-list.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './assigned-items-list.component.scss',
 })
 export class AssignedItemsListComponent {

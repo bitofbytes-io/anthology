@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, ChangeDetectionStrategy } from '@angular/core';
 import { NgClass, NgStyle } from '@angular/common';
 
 export type CornerPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
@@ -20,6 +20,7 @@ export interface CornerDragEvent {
     standalone: true,
     imports: [NgClass, NgStyle],
     templateUrl: './slot-overlay.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './slot-overlay.component.scss',
 })
 export class SlotOverlayComponent {

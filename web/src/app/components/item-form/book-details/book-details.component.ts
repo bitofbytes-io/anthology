@@ -1,4 +1,12 @@
-import { Component, DestroyRef, inject, Input, OnInit, signal } from '@angular/core';
+import {
+    Component,
+    DestroyRef,
+    inject,
+    Input,
+    OnInit,
+    signal,
+    ChangeDetectionStrategy,
+} from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatAutocompleteModule } from '@angular/material/autocomplete';
@@ -31,6 +39,7 @@ import { SeriesService } from '../../../services/series.service';
         ReactiveFormsModule,
     ],
     templateUrl: './book-details.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './book-details.component.scss',
 })
 export class BookDetailsComponent implements OnInit {

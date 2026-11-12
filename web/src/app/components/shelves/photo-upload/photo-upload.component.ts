@@ -1,4 +1,11 @@
-import { Component, EventEmitter, Input, Output, signal } from '@angular/core';
+import {
+    Component,
+    EventEmitter,
+    Input,
+    Output,
+    signal,
+    ChangeDetectionStrategy,
+} from '@angular/core';
 
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -13,6 +20,7 @@ export interface PhotoUploadResult {
     standalone: true,
     imports: [MatButtonModule, MatIconModule],
     templateUrl: './photo-upload.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './photo-upload.component.scss',
 })
 export class PhotoUploadComponent {

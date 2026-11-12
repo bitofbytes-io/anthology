@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withXhr } from '@angular/common/http';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
 import { SeriesDetailPageComponent } from './series-detail-page.component';
@@ -9,7 +9,7 @@ describe(SeriesDetailPageComponent.name, () => {
     beforeEach(async () => {
         await TestBed.configureTestingModule({
             imports: [SeriesDetailPageComponent, NoopAnimationsModule],
-            providers: [provideRouter([]), provideHttpClient()],
+            providers: [provideRouter([]), provideHttpClient(withXhr())],
         }).compileComponents();
     });
 

@@ -27,18 +27,18 @@
   },
   "private": true,
   "engines": {
-    "node": ">=20.19.0"
+    "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
   },
   "dependencies": {
-    "@angular/animations": "^22.0.0",
-    "@angular/cdk": "^21.2.12",
-    "@angular/common": "^22.0.0",
-    "@angular/compiler": "^22.0.0",
-    "@angular/core": "^22.0.0",
-    "@angular/forms": "^22.0.0",
-    "@angular/material": "^21.2.12",
-    "@angular/platform-browser": "^22.0.0",
-    "@angular/router": "^22.0.0",
+    "@angular/animations": "^22.2.6",
+    "@angular/cdk": "^22.2.7",
+    "@angular/common": "^22.2.6",
+    "@angular/compiler": "^22.2.6",
+    "@angular/core": "^22.2.6",
+    "@angular/forms": "^22.2.6",
+    "@angular/material": "^22.2.7",
+    "@angular/platform-browser": "^22.2.6",
+    "@angular/router": "^22.2.6",
     "@zxing/browser": "^0.2.0",
     "@zxing/library": "^0.23.0",
     "rxjs": "~7.8.2",
@@ -46,24 +46,18 @@
     "zone.js": "~0.16.2"
   },
   "devDependencies": {
-    "@angular-eslint/builder": "^21.4.0",
-    "@angular-eslint/eslint-plugin": "^21.4.0",
-    "@angular-eslint/eslint-plugin-template": "^21.4.0",
-    "@angular-eslint/schematics": "^21.4.0",
-    "@angular-eslint/template-parser": "^21.4.0",
-    "@angular/build": "^21.2.12",
-    "@angular/cli": "^21.2.26",
-    "@angular/compiler-cli": "^22.0.0",
-    "@eslint/eslintrc": "^3.3.5",
-    "@typescript-eslint/eslint-plugin": "^8.59.2",
-    "@typescript-eslint/parser": "^8.59.2",
+    "@angular/build": "^22.2.7",
+    "@angular/cli": "^22.2.7",
+    "@angular/compiler-cli": "^22.2.6",
+    "angular-eslint": "^22.6.0",
     "baseline-browser-mapping": "^2.10.29",
     "eslint": "^10.3.0",
     "happy-dom": "^21.0.0",
     "prettier": "^3.8.3",
     "stylelint": "^17.11.0",
     "stylelint-config-standard-scss": "^17.0.0",
-    "typescript": "~5.9.3",
+    "typescript": "~6.0.0",
+    "typescript-eslint": "^8.72.2",
     "vitest": "^4.0.8"
   },
   "overrides": {
@@ -73,12 +67,6 @@
     },
     "@parcel/watcher": {
       "picomatch": "4.0.7"
-    },
-    "@angular-eslint/builder": {
-      "@angular-devkit/core": "21.2.29"
-    },
-    "@angular-eslint/schematics": {
-      "@angular-devkit/core": "21.2.29"
     },
     "table": {
       "ajv": "8.20.0"

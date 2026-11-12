@@ -9,6 +9,7 @@ import {
     ChangeDetectorRef,
     DestroyRef,
     inject,
+    ChangeDetectionStrategy,
 } from '@angular/core';
 
 import {
@@ -49,6 +50,7 @@ export interface SlotPositionUpdate {
     standalone: true,
     imports: [SlotOverlayComponent],
     templateUrl: './shelf-canvas.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './shelf-canvas.component.scss',
 })
 export class ShelfCanvasComponent {

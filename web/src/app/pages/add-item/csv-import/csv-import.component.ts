@@ -10,6 +10,7 @@ import {
     output,
     signal,
     viewChild,
+    ChangeDetectionStrategy,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
@@ -86,6 +87,7 @@ export type CsvImportStage = 'upload' | 'review' | 'committing' | 'result' | 'un
     ],
     templateUrl: './csv-import.component.html',
     styleUrl: './csv-import.component.scss',
+    changeDetection: ChangeDetectionStrategy.Eager,
     host: { '(window:beforeunload)': 'handleBeforeUnload($event)' },
 })
 export class CsvImportComponent {

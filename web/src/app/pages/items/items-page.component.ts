@@ -10,6 +10,7 @@ import {
     effect,
     inject,
     signal,
+    ChangeDetectionStrategy,
 } from '@angular/core';
 import { MatCardModule } from '@angular/material/card';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
@@ -66,6 +67,7 @@ export interface LetterGroup {
         ItemsEmptyStateComponent,
     ],
     templateUrl: './items-page.component.html',
+    changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './items-page.component.scss',
 })
 export class ItemsPageComponent implements AfterViewInit, OnDestroy {
