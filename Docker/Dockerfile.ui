@@ -1,6 +1,6 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
-FROM node:24.15.0-alpine3.23 AS build
+FROM node:24.22.3-alpine3.23@sha256:3946fb783fdce8a2812136ea694bc95c698c4f4096f3fd18568dc27a8ac389dc AS build
 ARG VERSION=dev
 ARG REVISION=unknown
 WORKDIR /web
@@ -11,7 +11,7 @@ RUN npm ci
 COPY web/ ./
 RUN npm run build
 
-FROM nginx:1.30.0-alpine3.23
+FROM nginx:1.31.2-alpine3.23@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa
 ARG VERSION=dev
 ARG REVISION=unknown
 ARG SOURCE_URL=https://github.com/bitofbytes-io/anthology
