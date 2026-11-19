@@ -1,24 +1,52 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Weekly dependency updates for the Go API, Angular UI, Dockerfiles, and GitHub Actions. Replaces Dependabot.",
-  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
-  "schedule": ["* * * * 4"],
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "schedule": [
+    "* * * * 4"
+  ],
   "packageRules": [
     {
       "description": "One weekly PR for every non-major update. Major updates stay separate PRs.",
-      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pin",
+        "pinDigest"
+      ],
       "groupName": "all non-major dependencies"
     },
     {
       "description": "One weekly PR for GitHub Actions updates.",
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pin",
+        "pinDigest"
+      ],
       "groupName": "GitHub Actions"
     },
     {
       "description": "Pin Dockerfile base images by digest.",
-      "matchManagers": ["dockerfile"],
+      "matchManagers": [
+        "dockerfile"
+      ],
       "pinDigests": true
+    },
+    {
+      "description": "Hold TypeScript below 7 until Angular and typescript-eslint support it (anthology#233).",
+      "matchPackageNames": [
+        "typescript"
+      ],
+      "allowedVersions": "<7"
     }
   ]
 }
