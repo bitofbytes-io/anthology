@@ -34,13 +34,22 @@ describe(`${AddItemPageComponent.name} CSV import tab`, () => {
         const tabs = (): HTMLElement[] =>
             Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]'));
 
+        const csvTabIndex = 2;
+        fixture.componentInstance.selectedTab.set(csvTabIndex);
+        fixture.detectChanges();
         fixture.componentInstance.csvReviewActive.set(true);
         fixture.detectChanges();
-        expect(tabs().map((tab) => tab.getAttribute('aria-disabled'))).toEqual([
-            'true',
-            'true',
+        expect(tabs()[csvTabIndex].getAttribute('aria-selected')).toBe('true');
+
+        tabs()[0].click();
+        fixture.detectChanges();
+
+        expect(tabs().map((tab) => tab.getAttribute('aria-selected'))).toEqual([
             'false',
+            'false',
+            'true',
         ]);
+        expect(fixture.componentInstance.selectedTab()).toBe(csvTabIndex);
     });
 
     it('blocks leaving the page only while CSV rows are saving', () => {
