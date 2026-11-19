@@ -123,7 +123,7 @@ describe('BarcodeScannerService', () => {
     it('clears processing status when scan completes', () => {
         const service = TestBed.inject(BarcodeScannerService);
 
-        (service as any).beginProcessing('9781234567890');
+        (service as any).handleDetectedValue('9781234567890');
         expect(service.scannerStatus()).toContain('Processing');
 
         service.reportScanComplete();
