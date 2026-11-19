@@ -1,3 +1,4 @@
+import { BrowserMultiFormatReader } from '@zxing/browser';
 import { NotFoundException } from '@zxing/library';
 
 import { ZxingDetector } from './zxing-detector.service';
@@ -29,10 +30,20 @@ describe('ZxingDetector', () => {
         controls = { stop };
     });
 
-    it('prepares a reader', () => {
-        detector.prepare();
+    it('starts once a reader has been prepared', () => {
+        const decodeSpy = vi
+            .spyOn(BrowserMultiFormatReader.prototype, 'decodeFromVideoElement')
+            .mockResolvedValue(controls);
+        const video = document.createElement('video');
 
-        expect((detector as any).reader).not.toBeNull();
+        try {
+            detector.prepare();
+
+            expect(detector.start(video, vi.fn(), vi.fn())).toBe(true);
+            expect(decodeSpy).toHaveBeenCalledWith(video, expect.any(Function));
+        } finally {
+            decodeSpy.mockRestore();
+        }
     });
 
     it('does not start before the reader is prepared', () => {
