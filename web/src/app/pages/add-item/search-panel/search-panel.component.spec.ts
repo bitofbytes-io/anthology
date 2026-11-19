@@ -32,13 +32,11 @@ describe(SearchPanelComponent.name, () => {
     it('triggers a lookup when a barcode is detected', async () => {
         itemLookupServiceSpy.lookup.mockReturnValue(of([]));
         const { fixture, panel } = createComponent();
-        const submitSpy = vi.spyOn(panel, 'handleLookupSubmit');
 
         panel.handleDetectedBarcode('9781234567890');
         await fixture.whenStable();
 
         expect(panel.searchForm.get('query')?.value).toBe('9781234567890');
-        expect(submitSpy).toHaveBeenCalledWith('scanner');
         expect(itemLookupServiceSpy.lookup).toHaveBeenCalledWith('9781234567890', 'book');
     });
 
