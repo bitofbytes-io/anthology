@@ -74,7 +74,7 @@ describe('ScanFeedback', () => {
 
     it('cancels a pending clear when processing begins again', () => {
         feedback.reportSuccess('Dune', 1000);
-        vi.advanceTimersByTime(ScanFeedback.DETECTION_DEBOUNCE_MS);
+        vi.advanceTimersByTime(500);
         feedback.beginProcessing('222');
 
         vi.advanceTimersByTime(1000);
